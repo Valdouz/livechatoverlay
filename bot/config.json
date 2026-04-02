@@ -1,0 +1,6 @@
+{
+  "discord_token": "VOTRE_TOKEN_BOT_ICI",
+  "channel_id": 0,
+  "port": 3000,
+  "image_duration_seconds": 8
+}
