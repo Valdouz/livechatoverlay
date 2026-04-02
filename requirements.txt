@@ -1,0 +1,4 @@
+discord.py>=2.3.0
+aiohttp>=3.9.0
+pywebview>=4.4.0
+pywin32>=306

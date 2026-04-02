@@ -1,0 +1,35 @@
+# ── Secrets et config locale ──────────────────────────────────────────────────
+# Ces fichiers contiennent le token Discord et les IP du serveur.
+# Partir de config.example.json / overlay/config.example.json.
+/config.json
+/overlay/config.json
+/overlay/dist/config.json
+.env
+*.env
+
+# ── Artefacts de build PyInstaller ────────────────────────────────────────────
+overlay/build/
+overlay/dist/
+build/
+dist/
+
+# ── Binaires et archives lourds ───────────────────────────────────────────────
+*.zip
+*.cab
+*.exe
+*.mov
+*.mp4
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── OS / éditeurs ─────────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
