@@ -33,7 +33,7 @@ jobs:
           - os: ubuntu-latest
             name: linux
             artifact: LiveChat-linux
-            path: dist/LiveChat
+            path: dist/LiveChat-linux
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -95,6 +95,12 @@ jobs:
           else
             ditto -c -k LiveChat LiveChat-macos.zip
           fi
+
+      # Sans renommage, le binaire Linux s'appelle « LiveChat » tout court et
+      # devient ambigu à côté de LiveChat.exe dans la liste de la release.
+      - name: Nom explicite (Linux)
+        if: matrix.name == 'linux'
+        run: mv dist/LiveChat dist/LiveChat-linux
 
       - uses: actions/upload-artifact@v4
         with:
