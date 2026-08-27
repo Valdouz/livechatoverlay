@@ -11,6 +11,9 @@ Un panneau de contrôle réellement fonctionnel, moins de bugs, et un affichage 
 maîtrise : **où** ça s'affiche, **quelle taille**, **quelle police**, et une présentation
 retravaillée de **qui a posté**.
 
+S'y ajoute une seconde source de médias : l'**envoi direct depuis le client**, pour ne plus être
+plafonné par la limite de taille de Discord (§7).
+
 ---
 
 ## 2. Décisions techniques
@@ -139,7 +142,75 @@ dans le portail Discord.
 
 ---
 
-## 7. Bugs de la v1 à corriger au passage
+## 7. Ingestion : Discord **et** upload depuis le client
+
+La v1 n'a qu'une source : une pièce jointe postée dans le salon Discord. La v2 en ajoute une
+seconde — **l'envoi direct d'un fichier depuis le client** — pour dépasser la limite de taille
+de Discord (500 Mo même avec Nitro). Les deux sources convergent sur la même diffusion.
+
+```
+   Discord (pièce jointe)  ─┐
+                            ├─→  serveur  ─→  diffusion WebSocket  ─→  overlays
+   Upload client (fichier) ─┘
+```
+
+### Ce que ça change pour le serveur
+
+Il devient **hébergeur de fichiers**, ce qu'il n'était pas : la v1 ne relayait qu'une URL du CDN
+Discord, et c'est Discord qui servait le média à tous les viewers. Désormais chaque viewer
+télécharge depuis la machine du host.
+
+> ⚠️ **La contrainte réelle n'est plus la taille, c'est le débit montant du host.** Un fichier
+> de 1 Go tiré par 10 viewers, c'est 10 Go à envoyer depuis la connexion du host. En fibre ça
+> passe, en VDSL/ADSL c'est rédhibitoire. À vérifier avant de s'engager sur des fichiers de
+> plusieurs Go.
+
+### Protocole d'upload
+
+HTTP, pas WebSocket — découpé en morceaux et reprenable, sinon une coupure à 90 % d'un fichier
+de 1 Go fait tout recommencer.
+
+```
+POST /upload/init                → { id, chunk_size }
+PUT  /upload/{id}?offset=N       → envoi d'un morceau (rejouable)
+POST /upload/{id}/complete       → le serveur valide et diffuse
+```
+
+Le média n'est diffusé qu'une fois l'upload **terminé** — pas de relais en cours de transfert,
+et donc pas de file d'attente à gérer (cf. §9).
+
+### Service des fichiers
+
+`GET /media/{id}` avec **support des requêtes Range**, pour que les overlays lisent en streaming
+au lieu de télécharger 1 Go avant d'afficher la première image. `FileResponse` d'aiohttp le gère
+nativement.
+
+### Autorisation
+
+L'upload est réservé aux comptes authentifiés (§6). Un endpoint d'upload ouvert sur un serveur
+public, c'est un disque dur offert au premier venu.
+
+### Interface
+
+Glisser-déposer un fichier **sur le panneau**, plus un bouton « Envoyer un fichier ». Le
+glisser-déposer ne peut pas viser la fenêtre d'overlay, qui est click-through par construction.
+Barre de progression pendant le transfert.
+
+L'auteur affiché est le compte Discord authentifié du client qui envoie — avatar et pseudo
+fonctionnent à l'identique quelle que soit la source (§4).
+
+### À arbitrer
+
+| Point | Proposition par défaut |
+|---|---|
+| Taille maximale par fichier | 2 Go, configurable |
+| Rétention | suppression au bout de 24 h + purge au démarrage du serveur |
+| Quota disque total | plafond configurable, refus d'upload au-delà |
+| Débit montant du host | **à mesurer** — conditionne tout le reste |
+
+---
+
+## 8. Bugs de la v1 à corriger au passage
 
 1. `gethostbyaddr()` bloquant dans la boucle asyncio du serveur → supprimé (plus d'IP du tout)
 2. Double reconnexion WebSocket (`disconnected` **et** `error`) → un seul point + backoff
@@ -149,7 +220,7 @@ dans le portail Discord.
 
 ---
 
-## 8. Hors scope, explicitement
+## 9. Hors scope, explicitement
 
 - **File d'attente des médias** — écarté, un nouveau média remplace le précédent
 - **Historique / replay**
