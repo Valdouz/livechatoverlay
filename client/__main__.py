@@ -39,6 +39,68 @@ def settings_path() -> Path:
     return Path(base or Path.home() / ".config" / "LiveChat") / "settings.json"
 
 
+SIDECAR_NAMES = ("server.txt", "livechat-server.txt")
+
+HELP = """LiveChat — partage de médias en overlay
+
+  LiveChat [--server URL] [--tray]
+
+  --server URL   serveur à utiliser. Sans cette option : un fichier server.txt
+                 posé à côté de l'exécutable, la variable LIVECHAT_SERVER, ou
+                 l'adresse saisie au premier lancement.
+  --tray         démarrer discrètement, sans ouvrir le panneau.
+
+L'adresse de votre groupe est affichée sur la page d'accueil du serveur."""
+
+
+def app_dir() -> Path:
+    """Le dossier de l'exécutable, ou des sources en développement."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def preset_server() -> str:
+    """Adresse du serveur imposée au lancement, s'il y en a une.
+
+    Trois façons de la fournir, dans l'ordre de priorité :
+
+    1. ``LiveChat --server https://exemple.fr`` — pour un raccourci ou un script ;
+    2. un fichier ``server.txt`` posé à côté de l'exécutable — le host distribue
+       alors deux fichiers et ses amis n'ont rien à saisir ;
+    3. la variable d'environnement ``LIVECHAT_SERVER``.
+
+    Sans rien de tout ça, le panneau demande l'adresse au premier lancement :
+    elle est affichée en gros sur la page d'accueil du serveur.
+    """
+    for index, argument in enumerate(sys.argv):
+        if argument == "--server" and index + 1 < len(sys.argv):
+            return sys.argv[index + 1].strip()
+        if argument.startswith("--server="):
+            return argument.split("=", 1)[1].strip()
+
+    for name in SIDECAR_NAMES:
+        candidate = app_dir() / name
+        if candidate.exists():
+            try:
+                for line in candidate.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        return line
+            except OSError as exc:
+                log.warning("Lecture de %s impossible : %s", candidate, exc)
+
+    return os.environ.get("LIVECHAT_SERVER", "").strip()
+
+
+def normalise(url: str) -> str:
+    url = url.strip().rstrip("/")
+    if url and not url.startswith(("http://", "https://")):
+        # Une adresse collée depuis la page d'accueil peut avoir perdu son schéma.
+        url = f"https://{url}"
+    return url
+
+
 def make_icon() -> QIcon:
     """Icône dessinée à la volée : un fichier de moins à embarquer."""
     pixmap = QPixmap(64, 64)
@@ -59,6 +121,15 @@ class LiveChatClient:
     def __init__(self, app: QApplication, start_in_tray: bool = False):
         self._app = app
         self._settings = ClientSettings(settings_path())
+
+        # Une adresse imposée au lancement l'emporte : elle vient du host, pas du
+        # participant, et corrige une adresse enregistrée devenue caduque.
+        imposed = normalise(preset_server())
+        if imposed and imposed != self._settings["server_url"]:
+            log.info("Serveur imposé au lancement : %s", imposed)
+            self._settings.set("server_url", imposed)
+            self._settings.set("token", "")  # l'ancienne session ne vaut plus rien
+
         self._api = Api(self._settings)
         self._overlay = Overlay(self._settings)
         self._panel = Panel(self._settings)
@@ -266,6 +337,10 @@ def main() -> int:
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         log.warning("Pas de zone de notification : le panneau restera ouvert.")
+
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(HELP)
+        return 0
 
     in_tray = "--tray" in sys.argv and QSystemTrayIcon.isSystemTrayAvailable()
     client = LiveChatClient(app, start_in_tray=in_tray)

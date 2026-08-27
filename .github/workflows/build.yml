@@ -1,0 +1,151 @@
+name: Clients
+
+# Compile le client pour les trois systèmes et attache les exécutables à une
+# release. Les runners macOS d'Actions sont gratuits sur les dépôts publics :
+# c'est ce qui permet de produire la version Mac sans posséder de Mac.
+#
+#   git tag v2.0.0 && git push origin v2.0.0
+#
+# Le déclenchement manuel (onglet Actions) compile sans publier de release.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            artifact: LiveChat.exe
+            path: dist/LiveChat.exe
+          - os: macos-latest
+            name: macos
+            artifact: LiveChat-macos.zip
+            path: dist/LiveChat-macos.zip
+          - os: ubuntu-latest
+            name: linux
+            artifact: LiveChat-linux
+            path: dist/LiveChat
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-client.txt pyinstaller
+
+      # Qt a besoin d'un serveur X pour se lancer ; en mode offscreen il n'en
+      # faut pas, mais les bibliothèques système doivent être présentes.
+      - name: Bibliothèques Qt (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libgl1
+
+      # Le point d'entrée compilé doit démarrer hors du paquet : c'est ce qui a
+      # cassé le premier build, les imports relatifs n'avaient plus de parent.
+      - name: Point d'entrée
+        env:
+          QT_QPA_PLATFORM: offscreen
+          LIVECHAT_KEEP_PLATFORM: "1"
+        run: python livechat.py --help
+
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          LIVECHAT_KEEP_PLATFORM: "1"
+        run: python -m tests.test_client
+
+      - name: Compilation
+        run: python build_client.py
+
+      # Un .app ne survit pas au téléchargement sans archive : les permissions
+      # et la structure du bundle seraient perdues.
+      - name: Archive du bundle (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          cd dist
+          if [ -d LiveChat.app ]; then
+            ditto -c -k --keepParent LiveChat.app LiveChat-macos.zip
+          else
+            ditto -c -k LiveChat LiveChat-macos.zip
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publication
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            1. Téléchargez le fichier correspondant à votre système.
+            2. Lancez-le et collez l'adresse du serveur de votre groupe —
+               elle est affichée sur sa page d'accueil.
+            3. Connectez-vous avec Discord.
+
+            | Système | Fichier |
+            |---|---|
+            | Windows | `LiveChat.exe` |
+            | macOS | `LiveChat-macos.zip` |
+            | Linux | `LiveChat-linux` |
+
+            ### Premier lancement
+
+            Ces exécutables ne sont pas signés — signer coûte plusieurs centaines
+            d'euros par an, ce qui n'a pas de sens pour un projet gratuit.
+
+            **Windows** — SmartScreen affiche un avertissement :
+            « Informations complémentaires » puis « Exécuter quand même ».
+
+            **macOS** — le premier lancement est refusé. Faites un clic droit sur
+            l'application puis « Ouvrir », ou en une commande :
+            ```
+            xattr -dr com.apple.quarantine LiveChat.app
+            ```
+
+            **Linux** — rendez le fichier exécutable :
+            ```
+            chmod +x LiveChat-linux && ./LiveChat-linux
+            ```
+            Sous Wayland, le client passe automatiquement par XWayland : c'est la
+            seule façon pour une application de se positionner à l'écran et de
+            rester au premier plan.
+
+            ### Héberger votre propre serveur
+
+            ```
+            curl -fsSL https://raw.githubusercontent.com/Valdouz/livechatoverlay/main/install.sh | bash
+            ```

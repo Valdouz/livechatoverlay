@@ -53,7 +53,10 @@ def main() -> int:
     ]
     for module in EXCLUDED:
         command += ["--exclude-module", module]
-    command += [str(ROOT / "client" / "__main__.py")]
+    # Le point d'entrée est livechat.py, pas client/__main__.py : PyInstaller
+    # exécuterait ce dernier comme un script isolé et tous les imports relatifs
+    # du paquet échoueraient au démarrage.
+    command += [str(ROOT / "livechat.py")]
 
     print("Compilation en cours, comptez quelques minutes…\n")
     result = subprocess.run(command, cwd=ROOT)

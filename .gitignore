@@ -39,3 +39,7 @@ desktop.ini
 
 # ── Compilation du client ─────────────────────────────────────────────────────
 LiveChat.spec
+
+# Executables compiles localement
+/dist/
+/build/

@@ -7,13 +7,28 @@ Comptez une vingtaine de minutes, dont l'essentiel sur le site de Discord.
 
 ---
 
+## En une commande
+
+Si vous avez déjà une application Discord et un nom de domaine, tout tient dans ceci :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Valdouz/livechatoverlay/main/install.sh | bash
+```
+
+Le script installe Docker au besoin, pose les questions une par une, écrit la configuration
+et démarre tout. Le relancer plus tard met l'instance à jour sans rien redemander.
+
+Le reste de ce guide détaille chaque étape, notamment la création de l'application Discord.
+
+---
+
 ## Ce qu'il vous faut
 
 - Un serveur Discord dont vous êtes administrateur
 - Une machine qui reste allumée : un PC, un Raspberry Pi, un VPS, peu importe
-- [Docker](https://docs.docker.com/get-docker/) installé sur cette machine
-- Un nom de domaine pointant vers elle (voir [Sans nom de domaine](#sans-nom-de-domaine) si
-  vous n'en avez pas)
+- [Docker](https://docs.docker.com/get-docker/) — le script l'installe si besoin
+- Un nom de domaine. **Un tunnel Cloudflare évite d'ouvrir le moindre port** et fonctionne
+  même derrière une box que vous ne contrôlez pas
 
 ---
 
@@ -95,20 +110,50 @@ PUBLIC_URL=https://votre-domaine.fr
 DOMAIN=votre-domaine.fr
 ```
 
-Puis lancez :
+Puis démarrez, selon la façon dont vos amis vous atteindront :
 
 ```bash
-docker compose up -d
+docker compose --profile cloudflare up -d   # tunnel Cloudflare, aucun port ouvert
+docker compose --profile caddy up -d        # Caddy + Let's Encrypt, ports 80 et 443
+docker compose up -d                        # derrière votre propre reverse proxy
 ```
 
-C'est tout. Caddy obtient le certificat HTTPS tout seul, en général en moins d'une minute.
+### Tunnel Cloudflare — recommandé
+
+Aucun port entrant à ouvrir : le tunnel se connecte **sortant** vers Cloudflare, qui se
+charge du certificat. C'est la seule méthode qui marche derrière une box ou un pare-feu
+que vous ne maîtrisez pas.
+
+Sur [one.dash.cloudflare.com](https://one.dash.cloudflare.com) → **Networks** → **Tunnels** :
+
+1. **Create a tunnel** → Cloudflared, donnez-lui un nom
+2. copiez le **jeton** affiché — la longue chaîne qui suit `--token`
+3. onglet **Public Hostname** → **Add** :
+   - *Subdomain / Domain* : votre domaine, par exemple `livechat.exemple.fr`
+   - *Service* : **HTTP** → `livechat:3000`
+
+Puis dans `.env` :
+
+```ini
+COMPOSE_PROFILES=cloudflare
+CLOUDFLARE_TUNNEL_TOKEN=le-jeton-copié
+```
+
+### Caddy
+
+Certificat Let's Encrypt automatique, mais il faut que les ports **80 et 443** soient
+ouverts et que le domaine pointe sur la machine.
 
 Pour vérifier que ça tourne :
 
 ```bash
-curl https://votre-domaine.fr
+curl https://votre-domaine.fr/health
 # {"service": "livechat", "version": 2, "connected": 0}
 ```
+
+Et dans un navigateur, `https://votre-domaine.fr` affiche la **page d'accueil** : l'adresse
+du serveur avec un bouton pour la copier, et le lien de téléchargement du client. C'est la
+seule chose que vous avez à partager.
 
 Et pour suivre les journaux :
 
@@ -143,13 +188,27 @@ trois.
 
 ### Ce que vous donnez aux autres
 
-**L'exécutable, et l'adresse de votre serveur.** Rien d'autre.
+**Une seule chose : l'adresse de votre serveur.**
 
-Ils le lancent, collent l'adresse, cliquent sur « Se connecter avec Discord ». S'ils sont
-membres de votre serveur Discord, ça marche. Sinon, c'est refusé.
+Ils l'ouvrent dans un navigateur, la page leur propose le téléchargement du client et
+affiche l'adresse à y coller. Ils se connectent avec Discord — s'ils sont membres de votre
+serveur, ça marche ; sinon c'est refusé.
 
-Aucun fichier de configuration à distribuer, aucune adresse IP à mettre à jour quand la
-vôtre change, aucun port à ouvrir sur leur box.
+### Comment le client sait sur quel serveur il est
+
+L'exécutable est le même pour tout le monde : l'adresse n'est pas compilée dedans. Quatre
+façons de la lui donner, par ordre de priorité :
+
+| | |
+|---|---|
+| `LiveChat --server https://…` | pour un raccourci ou un script de lancement |
+| un fichier `server.txt` à côté de l'exécutable | le host distribue deux fichiers, ses amis n'ont **rien à saisir** |
+| la variable `LIVECHAT_SERVER` | pour un déploiement automatisé |
+| la saisie au premier lancement | le cas normal — l'adresse vient de la page d'accueil |
+
+Une adresse imposée au lancement l'emporte sur celle enregistrée : c'est ce qui permet de
+faire basculer tout le monde sur un nouveau serveur sans que personne n'ait à toucher à ses
+réglages.
 
 ### Sur Linux
 

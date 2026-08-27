@@ -92,8 +92,80 @@ def requires_owner(handler):
 
 # -- état -------------------------------------------------------------------
 
+RELEASES = "https://github.com/Valdouz/livechatoverlay/releases/latest"
 
-async def status(request: web.Request) -> web.Response:
+LANDING_PAGE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiveChat</title>
+<style>
+  :root {{ color-scheme: dark; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; min-height:100vh; display:grid; place-items:center; padding:2rem;
+         background:#0e0e15; color:#e8e8f2;
+         font:16px/1.6 system-ui, -apple-system, Segoe UI, sans-serif; }}
+  .card {{ width:min(34rem, 100%); }}
+  .ring {{ width:64px; height:64px; border-radius:50%; border:5px solid #3ddc84;
+          background:#1a1a26; margin:0 auto 1.5rem; }}
+  h1 {{ font-size:1.6rem; margin:0 0 .3rem; text-align:center; }}
+  .sub {{ text-align:center; color:#8a8aa2; margin:0 0 2rem; }}
+  .label {{ font-size:.72rem; letter-spacing:1.2px; text-transform:uppercase;
+           color:#7f7f9c; margin-bottom:.5rem; }}
+  .addr {{ display:flex; gap:.5rem; }}
+  code {{ flex:1; background:#1a1a26; border:1px solid #30304a; border-radius:10px;
+         padding:.85rem 1rem; font:15px ui-monospace, Consolas, monospace;
+         overflow-x:auto; white-space:nowrap; }}
+  button {{ background:#23232f; color:#e8e8f2; border:1px solid #30304a;
+           border-radius:10px; padding:0 1rem; cursor:pointer; font-size:14px; }}
+  button:hover {{ background:#2e2e3d; }}
+  .dl {{ display:block; margin:2rem 0 1rem; background:#3ddc84; color:#0b0b12;
+        text-align:center; text-decoration:none; font-weight:600;
+        border-radius:10px; padding:.9rem; }}
+  ol {{ color:#b8b8ce; padding-left:1.2rem; margin:1.5rem 0 0; }}
+  li {{ margin:.4rem 0; }}
+  .foot {{ margin-top:2rem; text-align:center; color:#55556a; font-size:.85rem; }}
+  .foot a {{ color:#7f7f9c; }}
+</style></head>
+<body><div class="card">
+  <div class="ring"></div>
+  <h1>LiveChat</h1>
+  <p class="sub">Les médias du groupe, en direct sur votre écran.</p>
+
+  <div class="label">Adresse de ce serveur</div>
+  <div class="addr">
+    <code id="addr">{url}</code>
+    <button onclick="navigator.clipboard.writeText('{url}');this.textContent='Copié'">Copier</button>
+  </div>
+
+  <a class="dl" href="{releases}">Télécharger LiveChat</a>
+
+  <ol>
+    <li>Téléchargez le client pour votre système.</li>
+    <li>Lancez-le, collez l'adresse ci-dessus.</li>
+    <li>Connectez-vous avec Discord — il faut être membre du serveur.</li>
+  </ol>
+
+  <p class="foot">{connected} en ligne ·
+    <a href="https://github.com/Valdouz/livechatoverlay">code source</a> · AGPL-3.0</p>
+</div></body></html>"""
+
+
+async def landing(request: web.Request) -> web.Response:
+    """Page d'accueil : l'adresse à coller dans le client, et le lien de
+    téléchargement. C'est la seule chose que le host a besoin de partager."""
+    count = len(request.app["hub"].clients())
+    return web.Response(
+        text=LANDING_PAGE.format(
+            url=request.app["config"].public_url,
+            releases=RELEASES,
+            connected="Personne" if not count else
+                      f"{count} participant{'s' if count > 1 else ''}",
+        ),
+        content_type="text/html",
+    )
+
+
+async def health(request: web.Request) -> web.Response:
     hub = request.app["hub"]
     return web.json_response(
         {"service": "livechat", "version": 2, "connected": len(hub.clients())}
@@ -485,7 +557,8 @@ async def admin_set_ban(request: web.Request) -> web.Response:
 
 
 def add_routes(app: web.Application) -> None:
-    app.router.add_get("/", status)
+    app.router.add_get("/", landing)
+    app.router.add_get("/health", health)
 
     app.router.add_get("/auth/start", auth_start)
     app.router.add_get("/auth/callback", auth_callback)

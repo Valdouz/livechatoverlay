@@ -78,9 +78,15 @@ async def run() -> None:
             return {"Authorization": f"Bearer {token}"}
 
         # -- état public ---------------------------------------------------
-        response = await client.get("/")
+        response = await client.get("/health")
         body = await response.json()
-        check("GET / repond", response.status == 200 and body["service"] == "livechat")
+        check("GET /health repond", response.status == 200 and body["service"] == "livechat")
+
+        response = await client.get("/")
+        page = await response.text()
+        check("la page d'accueil affiche l'adresse du serveur",
+              response.status == 200 and "http://localhost:3000" in page
+              and "Télécharger" in page, f"statut {response.status}")
 
         # -- authentification ----------------------------------------------
         response = await client.get("/me")

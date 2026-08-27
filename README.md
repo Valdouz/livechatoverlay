@@ -68,8 +68,17 @@ d'API admin ouverte, plus d'adresses IP exposées.
 **Un panneau qui sert à quelque chose** — écran, coin d'ancrage, taille, police, opacité, son.
 Les réglages appartiennent au participant, le serveur ne fournit que des valeurs par défaut.
 
-**Auto-hébergeable.** `docker compose up`, un `.env` à remplir une fois, et c'est tout : PC de
-bureau, VPS ou serveur perso, au choix.
+**Auto-hébergeable.** Un script d'installation, un `.env` à remplir une fois, et c'est tout :
+PC de bureau, VPS ou serveur perso, au choix. Exposition par tunnel Cloudflare — aucun port
+à ouvrir —, par Caddy avec Let's Encrypt, ou derrière votre propre reverse proxy.
+
+**Images, vidéos et audio.** mp3, wav, m4a, flac, ogg, opus. Un fichier audio s'affiche en
+carte de lecture, avec son avancement.
+
+**Animations choisies par l'expéditeur.** Fondu, glissements, zoom, rebond : c'est celui qui
+envoie qui décide de la façon dont son média débarque à l'écran.
+
+**Envoi ciblé.** Sur tous les écrans par défaut, ou sur celui d'une seule personne.
 
 **Un vrai système d'administration.** Un owner déclaré à l'installation, des admins qu'il promeut
 depuis l'appli, et des réglages serveur — quota disque, taille max, rétention, salon surveillé —

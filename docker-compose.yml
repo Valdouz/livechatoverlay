@@ -1,3 +1,13 @@
+# Trois façons d'exposer LiveChat, au choix, via les profils Compose :
+#
+#   docker compose --profile cloudflare up -d   tunnel Cloudflare, aucun port ouvert
+#   docker compose --profile caddy up -d        Caddy + Let's Encrypt, ports 80/443
+#   docker compose up -d                        rien devant, à mettre derrière son
+#                                               propre reverse proxy
+#
+# install.sh choisit pour vous. Le profil retenu est mémorisé dans .env
+# (COMPOSE_PROFILES), donc les commandes suivantes n'ont plus besoin du drapeau.
+
 services:
   livechat:
     build: .
@@ -7,15 +17,31 @@ services:
       - livechat-data:/data
     expose:
       - "3000"
-    # Sans Caddy (reverse proxy déjà en place, ou test en local), décommentez :
-    # ports:
-    #   - "3000:3000"
+    # Publié sur la boucle locale seulement : pratique pour un curl de contrôle,
+    # inatteignable depuis l'extérieur.
+    ports:
+      - "127.0.0.1:3000:3000"
 
-  # TLS automatique via Let's Encrypt. Supprimez ce service si vous avez déjà
-  # un reverse proxy : le serveur écoute en HTTP simple derrière.
+  # -- Tunnel Cloudflare ------------------------------------------------------
+  # Le tunnel se connecte sortant vers Cloudflare : aucun port entrant à ouvrir,
+  # rien à faire sur la box ou le pare-feu, et le certificat est géré par eux.
+  # Le jeton vient du tableau de bord Zero Trust, où vous déclarez le nom de
+  # domaine public et le service http://livechat:3000.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["cloudflare"]
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?Renseignez CLOUDFLARE_TUNNEL_TOKEN dans .env}
+    depends_on:
+      - livechat
+
+  # -- Caddy ------------------------------------------------------------------
+  # Certificat Let's Encrypt automatique. Demande que 80 et 443 soient ouverts
+  # et que le domaine pointe sur cette machine.
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    profiles: ["caddy"]
     environment:
       DOMAIN: ${DOMAIN:?Renseignez DOMAIN dans .env, par exemple livechat.exemple.fr}
     ports:
