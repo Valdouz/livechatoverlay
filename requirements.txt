@@ -1,2 +1,5 @@
-discord.py>=2.3.0
-aiohttp>=3.9.0
+# Serveur
+-r requirements-server.txt
+
+# Client
+-r requirements-client.txt

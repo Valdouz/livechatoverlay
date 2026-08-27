@@ -130,15 +130,32 @@ Ces réglages prennent effet immédiatement, sans redémarrage.
 
 ---
 
-## Ce que vous donnez aux autres
+## 6. Distribuer le client
 
-Une seule chose : **l'adresse de votre serveur**, `https://votre-domaine.fr`.
+```bash
+pip install -r requirements-client.txt
+python build_client.py
+```
 
-Ils installent le client, collent l'adresse, se connectent avec Discord. S'ils sont membres
-de votre serveur Discord, ça marche. Sinon, c'est refusé.
+Vous obtenez un exécutable autonome dans `dist/`. Il ne fonctionne que sur le système qui
+l'a compilé : relancez le script sur Windows, macOS et Linux si vous voulez couvrir les
+trois.
 
-Aucun fichier de configuration à distribuer, aucune adresse IP à mettre à jour, aucun port
-à ouvrir sur leur box.
+### Ce que vous donnez aux autres
+
+**L'exécutable, et l'adresse de votre serveur.** Rien d'autre.
+
+Ils le lancent, collent l'adresse, cliquent sur « Se connecter avec Discord ». S'ils sont
+membres de votre serveur Discord, ça marche. Sinon, c'est refusé.
+
+Aucun fichier de configuration à distribuer, aucune adresse IP à mettre à jour quand la
+vôtre change, aucun port à ouvrir sur leur box.
+
+### Sur Linux
+
+Le client force son passage par XWayland (`QT_QPA_PLATFORM=xcb`). C'est nécessaire : sous
+Wayland, une application ordinaire ne peut ni se positionner en coordonnées globales ni
+rester au premier plan. Tous les overlays qui fonctionnent sous GNOME font la même chose.
 
 ---
 
@@ -167,7 +184,7 @@ par le tunnel comme `PUBLIC_URL`.
 ## Sans Docker
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-server.txt
 python -m server
 ```
 

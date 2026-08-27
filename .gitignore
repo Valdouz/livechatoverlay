@@ -33,3 +33,6 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# ── Compilation du client ─────────────────────────────────────────────────────
+LiveChat.spec

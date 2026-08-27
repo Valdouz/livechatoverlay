@@ -23,12 +23,31 @@ Le guide complet, en partant de zéro : **[INSTALL.md](INSTALL.md)**.
 Vos participants n'ont besoin que d'une chose : **l'adresse de votre serveur**. Ils se
 connectent avec Discord, et s'ils sont membres de votre serveur, ça marche.
 
-## 🚧 État d'avancement
+## Pour les participants
+
+Récupérez l'exécutable auprès de votre hébergeur, lancez-le, saisissez l'adresse du
+serveur, connectez-vous avec Discord. C'est tout : ni fichier de configuration, ni
+adresse IP, ni port à ouvrir.
+
+Depuis les sources :
+
+```bash
+pip install -r requirements-client.txt
+python -m client
+```
+
+Pour produire l'exécutable à distribuer :
+
+```bash
+python build_client.py
+```
+
+## État d'avancement
 
 | | |
 |---|---|
-| **Serveur v2** | ✅ fonctionnel — auth Discord, envoi de fichiers, administration |
-| **Client v2** | 🚧 en cours |
+| **Serveur** | ✅ auth Discord, envoi de fichiers, rétention, administration |
+| **Client** | ✅ overlay peint, panneau complet, envoi par glisser-déposer |
 | **Spécification** | [SPEC_V2.md](SPEC_V2.md) |
 | **État des lieux de la v1** | [NOTES_V2.md](NOTES_V2.md) |
 | **Code de la v1** | branche [`v1`](../../tree/v1) · release [`v1.0.0`](../../releases/tag/v1.0.0) |
@@ -65,9 +84,16 @@ Le détail, les arbitrages et ce qui a été explicitement écarté sont dans
 
 ```bash
 pip install -r requirements.txt
+
 python -m tests.test_server     # 33 vérifications, sans connexion Discord
+python -m tests.test_client     # 33 vérifications, sans écran ni serveur
+
 python -m server                # nécessite un .env rempli
+python -m client
 ```
+
+Les tests du client construisent et peignent réellement la fenêtre, dans une image
+mémoire : les erreurs de `paintEvent` sont attrapées, pas seulement les imports.
 
 ## Licence
 
