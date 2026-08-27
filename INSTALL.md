@@ -72,8 +72,11 @@ et cliquez **New Application**. Donnez-lui le nom que vous voulez.
 
 Toujours dans **OAuth2**, section **URL Generator** :
 
-- **Scopes** : cochez `bot`
+- **Scopes** : cochez `bot` **et** `applications.commands`
 - **Bot Permissions** : cochez `Read Messages/View Channels` et `Read Message History`
+
+`applications.commands` est ce qui autorise la commande `/livechat`, par laquelle vos amis
+récupèrent l'adresse du serveur sans que vous ayez à la leur envoyer.
 
 Copiez l'URL générée en bas, ouvrez-la, choisissez votre serveur.
 
@@ -188,10 +191,13 @@ trois.
 
 ### Ce que vous donnez aux autres
 
-**Une seule chose : l'adresse de votre serveur.**
+**Rien du tout.** Vos amis tapent `/livechat` dans votre serveur Discord : le bot leur
+répond, visible d'eux seuls, avec l'adresse du serveur et le lien de téléchargement.
 
-Ils l'ouvrent dans un navigateur, la page leur propose le téléchargement du client et
-affiche l'adresse à y coller. Ils se connectent avec Discord — s'ils sont membres de votre
+L'adresse marche aussi telle quelle dans un navigateur : la page propose le téléchargement
+et affiche l'adresse à copier, pour ceux qui préfèrent.
+
+Dans les deux cas ils se connectent ensuite avec Discord — s'ils sont membres de votre
 serveur, ça marche ; sinon c'est refusé.
 
 ### Comment le client sait sur quel serveur il est

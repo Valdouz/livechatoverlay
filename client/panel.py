@@ -394,8 +394,8 @@ class Panel(QWidget):
             lambda: self._settings.set("server_url", self._server_field.text().strip())
         )
         layout.addWidget(Field("Adresse du serveur", self._server_field))
-        layout.addWidget(hint("Ouvrez l'adresse de votre groupe dans un navigateur : "
-                              "elle est affichée en gros, avec un bouton pour la copier."))
+        layout.addWidget(hint("Tapez /livechat dans votre serveur Discord : le bot vous "
+                              "répond l'adresse, visible de vous seul."))
 
         self._login_button = QPushButton("Se connecter avec Discord")
         self._login_button.setObjectName("primary")

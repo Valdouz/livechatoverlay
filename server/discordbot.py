@@ -10,8 +10,11 @@ import logging
 import mimetypes
 
 import discord
+from discord import app_commands
 
 log = logging.getLogger(__name__)
+
+RELEASES = "https://github.com/Valdouz/livechatoverlay/releases/latest"
 
 
 #: Certains conteneurs audio sont annoncés en video/* ou en application/* selon
@@ -52,6 +55,63 @@ class LiveChatBot(discord.Client):
         self._config = config
         self._settings = settings
         self._on_media = on_media
+        self.tree = app_commands.CommandTree(self)
+        self._register_commands()
+
+    # -- découverte depuis Discord --------------------------------------------
+
+    def _register_commands(self) -> None:
+        """La commande /livechat donne l'adresse du serveur depuis Discord même.
+
+        C'est la réponse au problème de l'amorçage : l'application compilée est la
+        même pour tout le monde et ne sait pas à quelle instance elle appartient.
+        Plutôt que de distribuer un second fichier de configuration, on récupère
+        l'adresse là où le groupe se trouve déjà.
+        """
+
+        @app_commands.command(
+            name="livechat",
+            description="Adresse LiveChat de ce serveur et lien de téléchargement",
+        )
+        async def livechat(interaction: discord.Interaction) -> None:
+            url = self._config.public_url
+            embed = discord.Embed(
+                title="LiveChat",
+                description=(
+                    "Les médias postés ici s'affichent en direct sur l'écran de "
+                    "tous ceux qui ont l'application ouverte."
+                ),
+                colour=0x3DDC84,
+            )
+            embed.add_field(name="Adresse de ce serveur", value=f"`{url}`", inline=False)
+            embed.add_field(
+                name="Installation",
+                value=(
+                    f"1. [Télécharger l'application]({RELEASES})\n"
+                    "2. La lancer, coller l'adresse ci-dessus\n"
+                    "3. Se connecter avec Discord"
+                ),
+                inline=False,
+            )
+            embed.set_footer(text="Réponse visible de vous seul.")
+            # Éphémère : le salon reste propre, et chacun peut la redemander.
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        self.tree.add_command(livechat)
+
+    async def setup_hook(self) -> None:
+        # Synchronisation sur le serveur configuré : une commande de guilde est
+        # disponible aussitôt, là où une commande globale met jusqu'à une heure.
+        guild = discord.Object(id=self._config.guild_id)
+        try:
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            log.info("Commande /livechat enregistrée sur le serveur Discord.")
+        except discord.HTTPException as exc:
+            log.warning(
+                "Enregistrement de /livechat impossible (%s). Le bot a-t-il été "
+                "invité avec la portée « applications.commands » ?", exc,
+            )
 
     # -- cycle de vie ---------------------------------------------------------
 
