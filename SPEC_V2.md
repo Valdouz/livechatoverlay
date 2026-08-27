@@ -165,7 +165,9 @@ télécharge depuis la machine du host.
 Connexion du host : **928 Mbps descendant / 575 Mbps montant** (fibre).
 
 575 Mbps ≈ 72 Mo/s théoriques, ~60 Mo/s en débit soutenu réaliste. En gardant ~75 Mbps de marge
-pour le flux OBS et les à-coups, il reste **~500 Mbps pour servir les médias**.
+pour les à-coups et le reste de l'usage de la machine, il reste **~500 Mbps pour servir les
+médias**. Si le serveur tourne sur la machine qui diffuse un flux vers Twitch/YouTube, compter
+6 à 20 Mbps de plus — négligeable à cette échelle.
 
 Grâce au service en Range (§ ci-dessous), les overlays tirent au **débit de la vidéo**, pas à la
 taille du fichier. C'est le débit qui dimensionne, et la taille devient presque indifférente :
