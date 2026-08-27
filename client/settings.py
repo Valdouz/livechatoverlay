@@ -49,6 +49,7 @@ DEFAULTS: dict[str, Any] = {
     "muted": False,
     # Comportement
     "avoid_fullscreen": True,   # basculer d'écran si un jeu occupe celui-ci
+    "panel_expanded": False,    # petit panneau flottant, ou vraie fenêtre
 }
 
 #: Réglages dont la valeur 0 signifie « prendre celle du serveur ».

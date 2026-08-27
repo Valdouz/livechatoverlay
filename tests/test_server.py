@@ -191,6 +191,75 @@ async def run() -> None:
         check("fichier au-dela du maximum refuse -> 400", response.status == 400,
               f"recu {response.status}")
 
+        # -- ciblage d'une personne -------------------------------------------
+        response = await client.get("/participants", headers=auth(member))
+        listed = await response.json()
+        check("liste des participants accessible a tous", response.status == 200, str(listed))
+        check("personne de connecte pour l'instant", listed == [], str(listed))
+
+        response = await client.get("/participants")
+        check("liste des participants sans jeton -> 401", response.status == 401)
+
+        # Deux ecrans : un pour le membre, un pour l'admin.
+        hub, store_ = app["hub"], app["store"]
+
+        class FakeWS:
+            def __init__(self): self.sent = []
+            async def send_str(self, text): self.sent.append(text)
+
+        ws_member, ws_admin = FakeWS(), FakeWS()
+        c_member = hub.add(ws_member, identity(MEMBER_ID, "Membre"))
+        c_admin = hub.add(ws_admin, identity(ADMIN_ID, "Admin"))
+
+        response = await client.get("/participants", headers=auth(member))
+        listed = await response.json()
+        check("les deux participants apparaissent", len(listed) == 2, str(listed))
+        check("le demandeur est marque comme etant lui-meme",
+              any(p["is_you"] for p in listed if p["id"] == str(MEMBER_ID)), str(listed))
+
+        sent = await app["broadcast_media"]({"id": None, "kind": "image", "url": "u"},
+                                            {"display_name": "Membre"}, "")
+        check("diffusion globale : tous les ecrans", sent == 2, str(sent))
+
+        before = len(ws_member.sent)
+        sent = await app["broadcast_media"]({"id": None, "kind": "image", "url": "u"},
+                                            {"display_name": "Admin"}, "", ADMIN_ID)
+        check("diffusion ciblee : un seul ecran", sent == 1, str(sent))
+        check("l'ecran vise a recu", len(ws_admin.sent) == 2, str(len(ws_admin.sent)))
+        check("l'ecran non vise n'a rien recu", len(ws_member.sent) == before,
+              str(len(ws_member.sent)))
+
+        import json as _json
+        marked = _json.loads(ws_admin.sent[-1])
+        check("le media cible est marque prive", marked["private"] is True, str(marked))
+        check("un media global n'est pas marque prive",
+              _json.loads(ws_admin.sent[0])["private"] is False)
+
+        # La retention n'attend que les ecrans vises.
+        payload2 = b"x" * 2048
+        response = await client.post("/upload/init", headers=auth(member),
+                                     json={"filename": "prive.png", "size": len(payload2),
+                                           "content_type": "image/png"})
+        up = await response.json()
+        await client.put(f"/upload/{up['id']}?offset=0", headers=auth(member), data=payload2)
+        response = await client.post(f"/upload/{up['id']}/complete", headers=auth(member),
+                                     json={"target_user_id": str(ADMIN_ID)})
+        result = await response.json()
+        check("envoi cible accepte", response.status == 200 and result["private"], str(result))
+        tracked = {e["media_id"]: e for e in store_.tracked()}
+        check("un seul destinataire attendu",
+              tracked[result["media"]["id"]]["pending"] == 1,
+              str(tracked[result["media"]["id"]]))
+        store_.delete(result["media"]["id"])
+
+        response = await client.post(f"/upload/{up['id']}/complete", headers=auth(member),
+                                     json={"target_user_id": "pas-un-nombre"})
+        check("destinataire invalide refuse", response.status in (400, 404),
+              f"recu {response.status}")
+
+        hub.remove(c_member)
+        hub.remove(c_admin)
+
         # -- service du media, avec Range ------------------------------------
         response = await client.get(f"/media/{media_id}")
         check("media sans jeton -> 401", response.status == 401, f"recu {response.status}")

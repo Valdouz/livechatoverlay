@@ -2,6 +2,8 @@
 # Ces fichiers contiennent le token Discord et les IP du serveur.
 # Partir de config.example.json / overlay/config.example.json.
 /config.json
+/overlay/config.json
+/overlay/dist/config.json
 .env
 *.env
 

@@ -159,6 +159,25 @@ async def logout(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+@requires_auth
+async def participants(request: web.Request) -> web.Response:
+    """Les participants connectés, pour choisir une cible d'envoi.
+
+    Ouvert à tout membre authentifié — contrairement à /admin/clients, il ne
+    révèle que ce que les intéressés voient déjà les uns des autres sur Discord.
+    """
+    hub = request.app["hub"]
+    me = request["identity"].user_id
+    seen: dict[int, dict] = {}
+    for client in hub.clients():
+        # Une même personne peut avoir plusieurs écrans : une seule entrée.
+        seen.setdefault(client.identity.user_id, {
+            **client.identity.public(),
+            "is_you": client.identity.user_id == me,
+        })
+    return web.json_response(sorted(seen.values(), key=lambda p: p["display_name"].lower()))
+
+
 # -- WebSocket ---------------------------------------------------------------
 
 
@@ -288,8 +307,22 @@ async def upload_complete(request: web.Request) -> web.Response:
         "display_name": identity.display_name,
         "avatar_url": identity.avatar_url,
     }
-    await request.app["broadcast_media"](media, author, str(body.get("caption", "")).strip())
-    return web.json_response({"ok": True, "media": media})
+
+    target = body.get("target_user_id")
+    if target in ("", "all", None):
+        target_user = None
+    else:
+        try:
+            target_user = int(target)
+        except (TypeError, ValueError):
+            store.delete(meta["id"])
+            raise web.HTTPBadRequest(reason="Destinataire invalide")
+
+    delivered = await request.app["broadcast_media"](
+        media, author, str(body.get("caption", "")).strip(), target_user
+    )
+    return web.json_response({"ok": True, "media": media, "delivered": delivered,
+                              "private": target_user is not None})
 
 
 @requires_auth
@@ -449,6 +482,7 @@ def add_routes(app: web.Application) -> None:
     app.router.add_get("/auth/callback", auth_callback)
     app.router.add_get("/auth/poll", auth_poll)
     app.router.add_get("/me", whoami)
+    app.router.add_get("/participants", participants)
     app.router.add_post("/logout", logout)
 
     app.router.add_get("/ws", websocket)

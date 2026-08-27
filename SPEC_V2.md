@@ -76,6 +76,9 @@ le serveur ne fournit plus que des valeurs par défaut, utilisées tant que le p
 
 **Admin** — visible uniquement si le serveur reconnaît le compte comme admin (§7)
 
+**Fenêtre** — le panneau est un petit flottant sans cadre, agrandissable en fenêtre système
+ordinaire : barre de titre, redimensionnement, barre des tâches. L'état est retenu.
+
 ---
 
 ## 4. Composition visuelle
@@ -263,11 +266,25 @@ nativement.
 L'upload est réservé aux comptes authentifiés (§6). Un endpoint d'upload ouvert sur un serveur
 public, c'est un disque dur offert au premier venu.
 
+### Destinataire
+
+Par défaut un média part sur **tous les écrans**. Le panneau permet aussi de **viser une seule
+personne** : le serveur ne diffuse alors qu'aux connexions de ce compte Discord, et n'attend
+d'accusé de réception que de celles-là.
+
+Un média ciblé arrive marqué `private` : l'overlay affiche « *auteur* → vous » à la place du
+seul pseudo. Sans ce repère, le destinataire n'aurait aucun moyen de savoir que les autres ne
+l'ont pas vu.
+
+`GET /participants` liste les personnes en ligne, accessible à tout membre authentifié — il ne
+révèle que ce que les intéressés voient déjà les uns des autres sur Discord, et jamais d'IP.
+On ne peut pas se viser soi-même.
+
 ### Interface
 
-Glisser-déposer un fichier **sur le panneau**, plus un bouton « Envoyer un fichier ». Le
-glisser-déposer ne peut pas viser la fenêtre d'overlay, qui est click-through par construction.
-Barre de progression pendant le transfert.
+Glisser-déposer un fichier **sur le panneau**, plus un bouton « Parcourir ». Le glisser-déposer
+ne peut pas viser la fenêtre d'overlay, qui est click-through par construction. Barre de
+progression pendant le transfert, et un choix de destinataire au-dessus.
 
 L'auteur affiché est le compte Discord authentifié du client qui envoie — avatar et pseudo
 fonctionnent à l'identique quelle que soit la source (§4).

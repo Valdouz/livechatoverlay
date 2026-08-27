@@ -188,15 +188,24 @@ def run() -> None:
 
         # -- panneau ----------------------------------------------------------
         panel = Panel(settings)
+        check("deconnecte : ecran de connexion, pas d'onglets",
+              panel._stack.currentIndex() == 0, str(panel._stack.currentIndex()))
         titles = [panel._tabs.tabText(i) for i in range(panel._tabs.count())]
-        check("onglets de base presents",
-              titles == ["Connexion", "Envoyer", "Affichage", "Texte"], str(titles))
+        check("onglets de base presents", titles == ["Envoyer", "Apparence"], str(titles))
 
         panel.set_identity({"user": {"display_name": "Toto", "is_admin": False,
                                      "is_owner": False, "may_upload": True},
                             "limits": {"max_file_bytes": 5 * 1024 ** 3}, "defaults": {}})
+        check("connecte : on bascule sur les onglets",
+              panel._stack.currentIndex() == 1, str(panel._stack.currentIndex()))
         titles = [panel._tabs.tabText(i) for i in range(panel._tabs.count())]
         check("un membre simple n'a pas l'onglet Admin", "Admin" not in titles, str(titles))
+
+        panel.set_identity({"user": {"display_name": "Sans", "is_admin": False,
+                                     "is_owner": False, "may_upload": False},
+                            "limits": {"max_file_bytes": 1024}, "defaults": {}})
+        check("sans droit d'envoi, la zone de depot est desactivee",
+              not panel._drop.isEnabled())
 
         panel.set_identity({"user": {"display_name": "Chef", "is_admin": True,
                                      "is_owner": True, "may_upload": True},
@@ -207,6 +216,40 @@ def run() -> None:
         panel.set_connected(True)
         check("le role est affiche", "propriétaire" in panel._subtitle.text(),
               panel._subtitle.text())
+        check("pastille verte quand connecte", panel._dot.objectName() == "dot_on",
+              panel._dot.objectName())
+        panel.set_connected(False)
+        check("pastille orange en reconnexion", panel._dot.objectName() == "dot_wait",
+              panel._dot.objectName())
+        panel.set_connected(True)
+
+        # -- petit panneau ou vraie fenetre -----------------------------------
+        compact_flags = panel.windowFlags()
+        check("compact : sans cadre et au premier plan",
+              bool(compact_flags & Qt.FramelessWindowHint)
+              and bool(compact_flags & Qt.WindowStaysOnTopHint))
+        check("compact : largeur figee",
+              panel.minimumWidth() == panel.maximumWidth() == 360,
+              f"{panel.minimumWidth()}-{panel.maximumWidth()}")
+
+        panel.set_expanded(True)
+        check("agrandi : cadre systeme rendu",
+              not (panel.windowFlags() & Qt.FramelessWindowHint), str(panel.windowFlags()))
+        check("agrandi : largeur redimensionnable",
+              panel.maximumWidth() > panel.minimumWidth(),
+              f"{panel.minimumWidth()}-{panel.maximumWidth()}")
+        check("agrandi : la croix maison disparait", not panel._close_button.isVisible())
+        check("agrandi : etat retenu", settings["panel_expanded"] is True)
+
+        panel.set_expanded(False)
+        check("retour au compact", bool(panel.windowFlags() & Qt.FramelessWindowHint)
+              and panel.minimumWidth() == panel.maximumWidth() == 360)
+        check("retour au compact : etat retenu", settings["panel_expanded"] is False)
+
+        panel.set_identity({"user": {"display_name": "Chef", "is_admin": True,
+                                     "is_owner": True, "may_upload": True},
+                            "limits": {"max_file_bytes": 5 * 1024 ** 3}, "defaults": {}})
+        panel.set_connected(True)
 
         panel.show_admin_clients([{"display_name": "Alice"}, {"display_name": "Bob"}])
         listed = panel._clients_label.text()
@@ -223,6 +266,69 @@ def run() -> None:
         check("le quota remonte dans le panneau", panel._quota.value() == 42,
               str(panel._quota.value()))
         check("le salon surveille est affiche", panel._channel_field.text() == "12345")
+
+        # -- choix du destinataire --------------------------------------------
+        check("par defaut, envoi a tout le monde",
+              panel._target_box.currentData() == "" and panel.target_name() == "",
+              panel._target_box.currentText())
+
+        panel.show_participants([
+            {"id": "1", "display_name": "Alice", "avatar_url": "", "is_you": False},
+            {"id": "2", "display_name": "Chef", "avatar_url": "", "is_you": True},
+            {"id": "3", "display_name": "Bob", "avatar_url": "", "is_you": False},
+        ])
+        options = [panel._target_box.itemText(i) for i in range(panel._target_box.count())]
+        check("on ne peut pas se viser soi-meme", "Seulement Chef" not in options, str(options))
+        check("les autres sont proposes",
+              options == ["Tout le monde", "Seulement Alice", "Seulement Bob"], str(options))
+
+        panel._target_box.setCurrentIndex(2)
+        check("le pseudo du destinataire est isole",
+              panel.target_name() == "Bob", panel.target_name())
+
+        # Un rafraichissement ne doit pas perdre la selection.
+        panel.show_participants([
+            {"id": "1", "display_name": "Alice", "avatar_url": "", "is_you": False},
+            {"id": "3", "display_name": "Bob", "avatar_url": "", "is_you": False},
+        ])
+        check("la selection survit au rafraichissement",
+              panel._target_box.currentData() == "3", panel._target_box.currentText())
+
+        emitted = []
+        panel.upload_requested.connect(lambda p, c, t: emitted.append((p.name, c, t)))
+        panel._caption_field.setText("coucou")
+        panel._on_file_chosen(Path("image.png"))
+        check("la cible accompagne l'envoi",
+              emitted == [("image.png", "coucou", "3")], str(emitted))
+
+        panel._target_box.setCurrentIndex(0)
+        check("retour a tout le monde", panel.target_name() == "")
+
+        # -- un media prive se signale sur l'overlay ---------------------------
+        private = payload("m6", "image", "http://x/y.png", "Alice")
+        private["private"] = True
+        overlay.show_media(private)
+        overlay._on_image(png_bytes(300, 200))
+        check("le media prive l'annonce", overlay._name_text() == "Alice → vous",
+              overlay._name_text())
+        overlay.show_media(payload("m7", "image", "http://x/y.png", "Alice"))
+        overlay._on_image(png_bytes(300, 200))
+        check("un media global ne l'annonce pas", overlay._name_text() == "Alice",
+              overlay._name_text())
+
+        # -- le logo doit vraiment porter l'anneau vert -----------------------
+        from client.panel import logo
+        from client.__main__ import make_icon
+        mark = logo(64).toImage()
+        ring = sum(1 for y in range(64) for x in range(64)
+                   if mark.pixelColor(x, y).green() > 150
+                   and mark.pixelColor(x, y).red() < 140)
+        check("le logo porte l'anneau vert", ring > 100, f"{ring} pixels verts")
+        tray = make_icon().pixmap(64, 64).toImage()
+        ring = sum(1 for y in range(64) for x in range(64)
+                   if tray.pixelColor(x, y).green() > 150
+                   and tray.pixelColor(x, y).red() < 140)
+        check("l'icone de notification aussi", ring > 100, f"{ring} pixels verts")
 
         # -- divers -----------------------------------------------------------
         check("tailles lisibles", human(5 * 1024 ** 3) == "5.0 Gio", human(5 * 1024 ** 3))

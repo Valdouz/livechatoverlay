@@ -10,7 +10,7 @@ from aiohttp import web
 
 from .app import add_routes
 from .auth import DiscordAuth
-from .config import Config, ConfigError
+from .config import Config, ConfigError, load_dotenv
 from .discordbot import LiveChatBot
 from .hub import Hub
 from .identity import Authorizer, Sessions
@@ -37,13 +37,19 @@ def build_app(config: Config, *, start_bot: bool = True) -> web.Application:
     store = MediaStore(config, settings)
     hub = Hub(store)
 
-    async def broadcast_media(media: dict, author: dict, caption: str) -> None:
-        """Diffuse un média et, s'il est hébergé ici, arme sa suppression."""
+    async def broadcast_media(media: dict, author: dict, caption: str,
+                              target_user: int | None = None) -> int:
+        """Diffuse un média et, s'il est hébergé ici, arme sa suppression.
+
+        `target_user` restreint l'envoi à un seul compte Discord ; par défaut le
+        média part sur tous les écrans.
+        """
         payload = {
             "type": "media",
             "media": media,
             "author": author,
             "caption": caption,
+            "private": target_user is not None,
             "defaults": {
                 "image_duration_seconds": settings["image_duration_seconds"],
                 "media_scale_percent": settings["media_scale_percent"],
@@ -51,15 +57,18 @@ def build_app(config: Config, *, start_bot: bool = True) -> web.Application:
         }
         # Les destinataires sont figés au moment de la diffusion : ceux qui se
         # connecteront après ne sont pas attendus, sans quoi le compte à rebours
-        # ne se déclencherait jamais sur un groupe qui va et vient.
-        recipients = hub.client_ids()
+        # ne se déclencherait jamais sur un groupe qui va et vient. Sur un envoi
+        # ciblé, seuls les écrans visés sont attendus.
+        recipients = {c.id for c in hub.recipients(target_user)}
         if media.get("id"):
             store.track(media["id"], recipients)
-        delivered = await hub.broadcast(payload)
+        delivered = await hub.broadcast(payload, only_user=target_user)
         log.info(
-            "Diffusé : %s de %s -> %d participant(s)",
+            "Diffusé : %s de %s -> %d écran(s)%s",
             media["kind"], author["display_name"], delivered,
+            " (ciblé)" if target_user else "",
         )
+        return delivered
 
     bot = LiveChatBot(config, settings, broadcast_media)
     auth = DiscordAuth(config, sessions, bot.lookup_member)
@@ -102,6 +111,8 @@ def build_app(config: Config, *, start_bot: bool = True) -> web.Application:
 
 def main() -> int:
     configure_logging()
+    if load_dotenv():
+        log.info("Configuration lue depuis .env")
     try:
         config = Config.from_env()
     except ConfigError as exc:

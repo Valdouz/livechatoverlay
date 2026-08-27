@@ -62,10 +62,15 @@ class Hub:
 
     # -- diffusion ------------------------------------------------------------
 
-    async def broadcast(self, payload: dict) -> int:
+    async def broadcast(self, payload: dict, only_user: int | None = None) -> int:
+        """Diffuse à tout le monde, ou aux seules connexions d'un compte.
+
+        Une personne peut être connectée depuis plusieurs machines : on vise le
+        compte Discord, pas une connexion en particulier.
+        """
         message = json.dumps(payload)
         delivered = 0
-        for client in list(self._clients.values()):
+        for client in self.recipients(only_user):
             try:
                 await client.ws.send_str(message)
                 delivered += 1
@@ -73,6 +78,11 @@ class Hub:
                 # La boucle de lecture du client fera le ménage de son côté.
                 log.debug("Envoi impossible vers %s", client.identity.display_name)
         return delivered
+
+    def recipients(self, only_user: int | None = None) -> list[Client]:
+        if only_user is None:
+            return list(self._clients.values())
+        return [c for c in self._clients.values() if c.identity.user_id == only_user]
 
     async def send_to(self, client: Client, payload: dict) -> None:
         try:

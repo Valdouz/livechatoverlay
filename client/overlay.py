@@ -55,6 +55,7 @@ class Overlay(QWidget):
         self._author = ""
         self._avatar: QPixmap | None = None
         self._caption = ""
+        self._private = False
         self._opacity = 0.0
         self._block = QRect()
 
@@ -145,6 +146,7 @@ class Overlay(QWidget):
         self._kind = media.get("kind", "image")
         self._author = author.get("display_name", "")
         self._caption = (payload.get("caption") or "").strip()
+        self._private = bool(payload.get("private"))
         self._avatar = None
 
         avatar_url = author.get("avatar_url", "")
@@ -178,6 +180,7 @@ class Overlay(QWidget):
         self._media_id = None
         self._caption = ""
         self._author = ""
+        self._private = False
         self._avatar = None
         self._block = QRect()
         self.update()
@@ -451,6 +454,11 @@ class Overlay(QWidget):
     def _author_row_height(self, font: QFont) -> int:
         return max(self._avatar_size(font), QFontMetrics(font).height())
 
+    def _name_text(self) -> str:
+        """Un média visé sur une seule personne doit le dire : sans ça, celle-ci
+        ne peut pas savoir que les autres ne l'ont pas vu."""
+        return f"{self._author} → vous" if self._private else self._author
+
     def _author_row_width(self, font: QFont) -> int:
         if self._settings["author_position"] != "above":
             return 0
@@ -459,7 +467,7 @@ class Overlay(QWidget):
             width += self._avatar_size(font) + theme.AVATAR_TEXT_GAP
         if self._author:
             # Le contour déborde de l'avance du texte, il faut le compter.
-            width += QFontMetrics(font).horizontalAdvance(self._author)
+            width += QFontMetrics(font).horizontalAdvance(self._name_text())
             width += theme.NAME_OUTLINE_WIDTH
         return width
 
@@ -496,7 +504,7 @@ class Overlay(QWidget):
 
         if self._author:
             available = self._block.right() - x - theme.NAME_OUTLINE_WIDTH
-            name = metrics.elidedText(self._author, Qt.ElideRight, max(available, 1))
+            name = metrics.elidedText(self._name_text(), Qt.ElideRight, max(available, 1))
             baseline = origin.y() + (row_h + metrics.capHeight()) // 2
             self._paint_outlined(
                 painter, name, QPoint(x, baseline), font,

@@ -41,11 +41,14 @@ QUNS_RUNNING_D3D_FULL_SCREEN = 3
 QUNS_PRESENTATION_MODE = 4
 
 
-def launch_command() -> list[str]:
-    """Comment relancer l'application, exécutable compilé ou script."""
-    if getattr(sys, "frozen", False):
-        return [sys.executable]
-    return [sys.executable, "-m", "client"]
+def launch_command(tray: bool = False) -> list[str]:
+    """Comment relancer l'application, exécutable compilé ou script.
+
+    `tray` ajoute l'option de démarrage discret : lancé avec la session, LiveChat
+    se range dans la zone de notification ; lancé à la main, il ouvre son panneau.
+    """
+    base = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "client"]
+    return (base + ["--tray"]) if tray else base
 
 
 # -- clic-traversant et premier plan -----------------------------------------
@@ -185,7 +188,7 @@ def _windows_autostart(enabled: bool) -> bool:
 
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _AUTOSTART_KEY, 0, winreg.KEY_SET_VALUE) as key:
         if enabled:
-            command = subprocess_quote(launch_command())
+            command = subprocess_quote(launch_command(tray=True))
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, command)
         else:
             try:
@@ -200,7 +203,7 @@ def _mac_autostart(enabled: bool) -> bool:
     if not enabled:
         target.unlink(missing_ok=True)
         return True
-    arguments = "".join(f"    <string>{part}</string>\n" for part in launch_command())
+    arguments = "".join(f"    <string>{part}</string>\n" for part in launch_command(tray=True))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -226,7 +229,7 @@ def _linux_autostart(enabled: bool) -> bool:
         "[Desktop Entry]\n"
         "Type=Application\n"
         f"Name={APP_NAME}\n"
-        f"Exec={subprocess_quote(launch_command())}\n"
+        f"Exec={subprocess_quote(launch_command(tray=True))}\n"
         "X-GNOME-Autostart-enabled=true\n"
         "NoDisplay=true\n",
         encoding="utf-8",

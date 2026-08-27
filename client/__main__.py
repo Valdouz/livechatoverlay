@@ -18,7 +18,8 @@ import logging  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer  # noqa: E402
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPixmap  # noqa: E402
+from PySide6.QtGui import (QAction, QColor, QGuiApplication, QIcon, QPainter,  # noqa: E402
+                           QPen, QPixmap)
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
 
 from . import theme  # noqa: E402
@@ -30,6 +31,7 @@ from .settings import ClientSettings  # noqa: E402
 log = logging.getLogger("livechat.client")
 
 ADMIN_REFRESH_MS = 5000
+PEOPLE_REFRESH_MS = 8000
 
 
 def settings_path() -> Path:
@@ -46,10 +48,7 @@ def make_icon() -> QIcon:
     painter.setBrush(QColor("#16161f"))
     painter.setPen(Qt.NoPen)
     painter.drawEllipse(4, 4, 56, 56)
-    pen = painter.pen()
-    pen.setColor(theme.RING_COLOR)
-    pen.setWidth(6)
-    painter.setPen(pen)
+    painter.setPen(QPen(theme.RING_COLOR, 6))
     painter.setBrush(Qt.NoBrush)
     painter.drawEllipse(8, 8, 48, 48)
     painter.end()
@@ -57,7 +56,7 @@ def make_icon() -> QIcon:
 
 
 class LiveChatClient:
-    def __init__(self, app: QApplication):
+    def __init__(self, app: QApplication, start_in_tray: bool = False):
         self._app = app
         self._settings = ClientSettings(settings_path())
         self._api = Api(self._settings)
@@ -74,9 +73,16 @@ class LiveChatClient:
         self._admin_timer = QTimer()
         self._admin_timer.timeout.connect(self._refresh_admin)
 
+        # La liste des destinataires doit suivre les allées et venues du groupe.
+        self._people_timer = QTimer()
+        self._people_timer.timeout.connect(self._refresh_people)
+
         if self._settings["server_url"] and self._settings["token"]:
             self._api.fetch_me()
-        else:
+        # Lancé à la main, on montre le panneau ; lancé avec la session, on se range
+        # dans la zone de notification. Sans ça, rouvrir l'application avec une
+        # session enregistrée ne produisait rien de visible.
+        if not start_in_tray:
             self._panel.open_near_cursor()
 
     # -- câblage --------------------------------------------------------------
@@ -94,8 +100,9 @@ class LiveChatClient:
         api.command_received.connect(self._on_command)
 
         api.upload_progress.connect(panel.upload_progress)
-        api.upload_finished.connect(lambda _: panel.upload_ended("Média envoyé."))
+        api.upload_finished.connect(self._on_upload_finished)
         api.upload_failed.connect(lambda message: panel.upload_ended(message, error=True))
+        api.participants.connect(panel.show_participants)
         api.admin_data.connect(self._on_admin_data)
         api.admin_error.connect(lambda message: panel.notify(message, error=True))
 
@@ -147,6 +154,9 @@ class LiveChatClient:
         self._api.start()
         self._overlay.refresh()
 
+        self._api.fetch_participants()
+        self._people_timer.start(PEOPLE_REFRESH_MS)
+
         if me.get("user", {}).get("is_admin"):
             self._refresh_admin()
             self._admin_timer.start(ADMIN_REFRESH_MS)
@@ -155,6 +165,7 @@ class LiveChatClient:
 
     def _on_logout(self) -> None:
         self._admin_timer.stop()
+        self._people_timer.stop()
         self._api.logout()
         self._overlay.clear()
         self._panel.set_identity(None)
@@ -178,14 +189,29 @@ class LiveChatClient:
 
     # -- envoi ----------------------------------------------------------------
 
-    def _on_upload(self, path: Path, caption: str) -> None:
+    def _on_upload(self, path: Path, caption: str, target: str) -> None:
         try:
             total = path.stat().st_size
         except OSError as exc:
             self._panel.notify(f"Fichier illisible : {exc}", error=True)
             return
         self._panel.upload_started(total)
-        self._api.upload(path, caption)
+        self._api.upload(path, caption, target)
+
+    def _on_upload_finished(self, payload: dict) -> None:
+        delivered = payload.get("delivered", 0)
+        if payload.get("private"):
+            if delivered:
+                name = self._panel.target_name() or "cette personne"
+                self._panel.upload_ended(f"Envoyé à {name}.")
+            else:
+                self._panel.upload_ended(
+                    "Envoyé, mais cette personne n'était plus connectée.", error=True)
+        elif delivered:
+            self._panel.upload_ended(
+                f"Envoyé sur {delivered} écran{'s' if delivered > 1 else ''}.")
+        else:
+            self._panel.upload_ended("Envoyé, mais personne n'était connecté.", error=True)
 
     # -- administration -------------------------------------------------------
 
@@ -194,6 +220,10 @@ class LiveChatClient:
             self._api.admin_patch("settings", "patched", payload)
         elif action in ("clear", "mute", "unmute"):
             self._api.admin_post(action, action)
+
+    def _refresh_people(self) -> None:
+        if self._panel.isVisible():
+            self._api.fetch_participants()
 
     def _refresh_admin(self) -> None:
         if not self._panel.isVisible():
@@ -237,10 +267,8 @@ def main() -> int:
     if not QSystemTrayIcon.isSystemTrayAvailable():
         log.warning("Pas de zone de notification : le panneau restera ouvert.")
 
-    client = LiveChatClient(app)
-    if not QSystemTrayIcon.isSystemTrayAvailable():
-        client._panel.open_near_cursor()
-
+    in_tray = "--tray" in sys.argv and QSystemTrayIcon.isSystemTrayAvailable()
+    client = LiveChatClient(app, start_in_tray=in_tray)
     return app.exec()
 
 

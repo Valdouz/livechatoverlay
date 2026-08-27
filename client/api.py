@@ -39,6 +39,7 @@ class Api(QObject):
     upload_finished = Signal(dict)
     upload_failed = Signal(str)
 
+    participants = Signal(list)           # qui est en ligne
     admin_data = Signal(str, object)      # nom de la requête, contenu
     admin_error = Signal(str)
 
@@ -165,6 +166,20 @@ class Api(QObject):
 
         reply.finished.connect(done)
 
+    def fetch_participants(self) -> None:
+        """Qui est en ligne, pour proposer une cible d'envoi."""
+        if not self.token:
+            return
+        reply = self._nam.get(self._request("/participants"))
+
+        def done():
+            payload = _read_json(reply)
+            reply.deleteLater()
+            if isinstance(payload, list):
+                self.participants.emit(payload)
+
+        reply.finished.connect(done)
+
     def logout(self) -> None:
         if self.token:
             reply = self._nam.post(self._request("/logout", json_body=True), b"{}")
@@ -226,7 +241,7 @@ class Api(QObject):
 
     # -- envoi de fichier -----------------------------------------------------
 
-    def upload(self, path: Path, caption: str = "") -> None:
+    def upload(self, path: Path, caption: str = "", target: str = "") -> None:
         if self._upload is not None:
             self.upload_failed.emit("Un envoi est déjà en cours.")
             return
@@ -258,6 +273,7 @@ class Api(QObject):
                 "size": size,
                 "offset": 0,
                 "caption": caption,
+                "target": target,
                 "handle": path.open("rb"),
             }
             self.upload_progress.emit(0, size)
@@ -298,7 +314,8 @@ class Api(QObject):
         job = self._upload
         if job is None:
             return
-        body = json.dumps({"caption": job["caption"]}).encode()
+        body = json.dumps({"caption": job["caption"],
+                           "target_user_id": job["target"] or "all"}).encode()
         reply = self._nam.post(
             self._request(f"/upload/{job['id']}/complete", json_body=True), body
         )
