@@ -33,5 +33,12 @@ d'API admin ouverte, plus d'adresses IP exposées.
 **Un panneau qui sert à quelque chose** — écran, coin d'ancrage, taille, police, opacité, son.
 Les réglages appartiennent au participant, le serveur ne fournit que des valeurs par défaut.
 
+**Auto-hébergeable.** `docker compose up`, un `.env` à remplir une fois, et c'est tout : PC de
+bureau, VPS ou serveur perso, au choix.
+
+**Un vrai système d'administration.** Un owner déclaré à l'installation, des admins qu'il promeut
+depuis l'appli, et des réglages serveur — quota disque, taille max, rétention, salon surveillé —
+modifiables à chaud depuis le panneau, sans accès à la machine ni redémarrage.
+
 Le détail, les arbitrages et ce qui a été explicitement écarté sont dans
 [SPEC_V2.md](SPEC_V2.md).

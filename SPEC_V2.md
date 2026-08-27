@@ -12,7 +12,7 @@ maîtrise : **où** ça s'affiche, **quelle taille**, **quelle police**, et une 
 retravaillée de **qui a posté**.
 
 S'y ajoute une seconde source de médias : l'**envoi direct depuis le client**, pour ne plus être
-plafonné par la limite de taille de Discord (§7).
+plafonné par la limite de taille de Discord (§8).
 
 ---
 
@@ -74,7 +74,7 @@ le serveur ne fournit plus que des valeurs par défaut, utilisées tant que le p
 
 **Système** — lancement au démarrage (Windows / macOS / Linux)
 
-**Admin** — visible uniquement si le compte Discord porte le rôle configuré (§6)
+**Admin** — visible uniquement si le serveur reconnaît le compte comme admin (§7)
 
 ---
 
@@ -142,7 +142,59 @@ dans le portail Discord.
 
 ---
 
-## 7. Ingestion : Discord **et** upload depuis le client
+## 7. Administration
+
+L'admin cesse d'être une case à cocher dans le fichier de config du client. En v1,
+`IS_ADMIN = config.get("admin", False) or _is_local_server()` ne faisait que **masquer des
+boutons** : n'importe qui pouvait appeler `/admin/*` à la main. En v2 l'autorisation est décidée
+par le **serveur** à partir de l'identité Discord, et chaque action admin est revérifiée côté
+serveur — le client ne fait qu'afficher ou non l'interface.
+
+### Qui est admin
+
+| Rôle | Comment il est défini | Ce qu'il peut faire |
+|---|---|---|
+| **Owner** | `OWNER_ID` dans la config d'installation, posé une fois (§9) | tout, dont promouvoir et révoquer des admins |
+| **Admin** | promu par l'owner depuis le panneau, ou porteur du rôle Discord configuré | tous les réglages serveur et la modération |
+| **Participant** | membre du serveur Discord | recevoir et envoyer des médias |
+
+L'owner est déclaré à l'installation pour résoudre l'**amorçage** : sur une instance neuve,
+personne ne pourrait se promouvoir. Ensuite tout se gère depuis le panneau, sans jamais
+retoucher un fichier ni redémarrer le serveur.
+
+### Réglages serveur, modifiables à chaud
+
+Le panneau admin lit et écrit les réglages du serveur — plus besoin d'un accès à la machine :
+
+| Réglage | Défaut |
+|---|---|
+| **Quota disque total** | 30 Go |
+| Taille maximale par fichier | 5 Go |
+| Délai de suppression après réception | 10 min |
+| Plafond absolu de rétention | 1 h |
+| Durée d'affichage par défaut des images | 8 s |
+| Taille par défaut des médias | 30 % de l'écran |
+| Salon Discord surveillé | — |
+| Qui peut envoyer | tout le monde / porteurs d'un rôle donné |
+| Liste des admins | — |
+
+```
+GET   /admin/settings     → réglages courants
+PATCH /admin/settings     → modification, admins uniquement
+```
+
+Ces réglages sont persistés côté serveur dans un fichier de données, **séparé de la config
+d'installation** (§9) qui, elle, ne contient que les secrets et l'URL publique.
+
+### Modération
+
+Les actions de la v1, désormais authentifiées : retirer le média en cours, couper le son de tout
+le monde, lister les participants connectés — par **pseudo Discord**, plus par IP. S'y ajoutent
+le bannissement d'un participant et la suppression manuelle d'un fichier.
+
+---
+
+## 8. Ingestion : Discord **et** upload depuis le client
 
 La v1 n'a qu'une source : une pièce jointe postée dans le salon Discord. La v2 en ajoute une
 seconde — **l'envoi direct d'un fichier depuis le client** — pour dépasser la limite de taille
@@ -198,7 +250,7 @@ POST /upload/{id}/complete       → le serveur valide et diffuse
 ```
 
 Le média n'est diffusé qu'une fois l'upload **terminé** — pas de relais en cours de transfert,
-et donc pas de file d'attente à gérer (cf. §9).
+et donc pas de file d'attente à gérer (cf. §11).
 
 ### Service des fichiers
 
@@ -228,8 +280,11 @@ fonctionnent à l'identique quelle que soit la source (§4).
 | Suppression | **10 min après que tous les participants ont fini de recevoir le média** |
 | Plafond absolu | 1 h après la diffusion, quoi qu'il arrive |
 | Purge au démarrage | oui — le dossier des médias est vidé au lancement du serveur |
-| Quota disque total | plafond configurable, refus d'upload au-delà |
+| Quota disque total | 30 Go par défaut, refus d'upload au-delà |
 | Débit montant du host | ✅ mesuré, non limitant (voir ci-dessus) |
+
+Toutes ces valeurs sont des **défauts modifiables à chaud depuis le panneau admin** (§7), pas
+des constantes de fichier de config.
 
 **Comment le serveur sait qu'un média est « reçu » :** chaque overlay envoie un accusé sur le
 WebSocket quand il en a terminé avec le média — image affichée jusqu'au bout, ou vidéo lue
@@ -251,7 +306,47 @@ fichiers de 5 Go en parallèle, c'est 15 Go.
 
 ---
 
-## 8. Bugs de la v1 à corriger au passage
+## 9. Auto-hébergement
+
+Le serveur doit pouvoir tourner **n'importe où** : la machine du host, un VPS, un serveur perso.
+La v1 supposait un PC Windows de bureau, au point que `_is_local_server()` accordait les droits
+admin à quiconque lançait le client sur la même machine que le serveur. Cette heuristique
+disparaît : c'est l'identité Discord qui décide (§7), jamais l'adresse réseau.
+
+### Déploiement
+
+```
+docker compose up -d
+```
+
+Un `.env` pour ce qui ne change plus après l'installation :
+
+| Variable | Rôle |
+|---|---|
+| `DISCORD_TOKEN` | token du bot |
+| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | application OAuth2 |
+| `DISCORD_GUILD_ID` | serveur Discord dont les membres sont autorisés |
+| `OWNER_ID` | identifiant Discord de l'administrateur initial |
+| `PUBLIC_URL` | URL publique, pour la redirection OAuth2 |
+| `DATA_DIR` | volume des médias et des réglages |
+
+**Tout le reste se règle depuis le panneau admin** (§7). Un fichier à remplir une fois, puis
+plus rien.
+
+### TLS
+
+Caddy en frontal, certificat Let's Encrypt automatique. Pour qui a déjà un reverse proxy, le
+serveur écoute en HTTP simple derrière et n'impose rien.
+
+### Ce que le client a besoin de savoir
+
+Une seule valeur : **l'URL du serveur**. Plus d'IP à redistribuer à chaque changement, plus de
+redirection de port à expliquer, et le fichier de config du client ne contient plus rien de
+sensible.
+
+---
+
+## 10. Bugs de la v1 à corriger au passage
 
 1. `gethostbyaddr()` bloquant dans la boucle asyncio du serveur → supprimé (plus d'IP du tout)
 2. Double reconnexion WebSocket (`disconnected` **et** `error`) → un seul point + backoff
@@ -261,7 +356,7 @@ fichiers de 5 Go en parallèle, c'est 15 Go.
 
 ---
 
-## 9. Hors scope, explicitement
+## 11. Hors scope, explicitement
 
 - **File d'attente des médias** — écarté, un nouveau média remplace le précédent
 - **Historique / replay**
