@@ -6,14 +6,30 @@ apparaît en temps réel sur tous les écrans du groupe.
 
 ---
 
-## 🚧 Refonte en cours
+**Libre, gratuit, auto-hébergeable.** Sous licence AGPL-3.0 : quiconque en propose une
+version modifiée en ligne doit en publier le code. Personne ne peut refermer ce projet.
 
-La v1 est **archivée** et le code est reparti de zéro pour la v2. Ce dépôt ne contient pour
-l'instant que la spécification.
+## Installer
+
+```bash
+git clone https://github.com/Valdouz/livechatoverlay.git
+cd livechatoverlay
+cp .env.example .env      # six valeurs à remplir
+docker compose up -d
+```
+
+Le guide complet, en partant de zéro : **[INSTALL.md](INSTALL.md)**.
+
+Vos participants n'ont besoin que d'une chose : **l'adresse de votre serveur**. Ils se
+connectent avec Discord, et s'ils sont membres de votre serveur, ça marche.
+
+## 🚧 État d'avancement
 
 | | |
 |---|---|
-| **Spécification de la v2** | [SPEC_V2.md](SPEC_V2.md) |
+| **Serveur v2** | ✅ fonctionnel — auth Discord, envoi de fichiers, administration |
+| **Client v2** | 🚧 en cours |
+| **Spécification** | [SPEC_V2.md](SPEC_V2.md) |
 | **État des lieux de la v1** | [NOTES_V2.md](NOTES_V2.md) |
 | **Code de la v1** | branche [`v1`](../../tree/v1) · release [`v1.0.0`](../../releases/tag/v1.0.0) |
 
@@ -42,3 +58,19 @@ modifiables à chaud depuis le panneau, sans accès à la machine ni redémarrag
 
 Le détail, les arbitrages et ce qui a été explicitement écarté sont dans
 [SPEC_V2.md](SPEC_V2.md).
+
+---
+
+## Développement
+
+```bash
+pip install -r requirements.txt
+python -m tests.test_server     # 33 vérifications, sans connexion Discord
+python -m server                # nécessite un .env rempli
+```
+
+## Licence
+
+[AGPL-3.0](LICENSE). Vous pouvez l'utiliser, le modifier et le redistribuer librement, y
+compris commercialement. La seule contrainte : si vous en proposez une version modifiée à
+d'autres, par un service en ligne compris, vous devez en publier le code source.

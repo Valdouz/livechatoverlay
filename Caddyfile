@@ -1,0 +1,8 @@
+# Certificat Let's Encrypt obtenu et renouvelé automatiquement.
+# DOMAIN vient du .env — il doit correspondre à PUBLIC_URL.
+{$DOMAIN} {
+	reverse_proxy livechat:3000 {
+		# Les envois de plusieurs gigaoctets passent en flux, sans mise en tampon.
+		flush_interval -1
+	}
+}

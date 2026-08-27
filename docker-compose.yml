@@ -1,0 +1,34 @@
+services:
+  livechat:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - livechat-data:/data
+    expose:
+      - "3000"
+    # Sans Caddy (reverse proxy déjà en place, ou test en local), décommentez :
+    # ports:
+    #   - "3000:3000"
+
+  # TLS automatique via Let's Encrypt. Supprimez ce service si vous avez déjà
+  # un reverse proxy : le serveur écoute en HTTP simple derrière.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Renseignez DOMAIN dans .env, par exemple livechat.exemple.fr}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - livechat
+
+volumes:
+  livechat-data:
+  caddy-data:
+  caddy-config:
