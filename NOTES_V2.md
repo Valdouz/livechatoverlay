@@ -97,18 +97,18 @@ et les doublons `bot/*.bat`. Un seul chemin de code.
 
 ---
 
-## 6. Pistes de features v2 (à arbitrer)
+## 6. Périmètre de la v2 — arbitré
 
-- File d'attente des médias + durée d'affichage adaptative.
-- Panneau client complet : coin d'affichage, écran cible, taille, durée, opacité, mute.
-- Panneau admin séparé (web ou app) authentifié : voir les clients, kick, clear, mute global.
-- Historique / replay des N derniers médias.
-- Support des URLs directes postées en texte, des stickers, des liens YouTube/Twitch clips.
-- Modération : allow-list d'auteurs, taille max, cooldown par utilisateur, bouton « bannir ce média ».
-- Auto-update du client (aujourd'hui il faut redistribuer l'`.exe` à la main).
-- Découverte du serveur (Tailscale MagicDNS) pour ne plus éditer d'IP dans `config.json`.
+Les décisions sont consignées dans [SPEC_V2.md](SPEC_V2.md). En résumé : panneau de contrôle
+complet côté client (écran, coin, taille, police, opacité, son), présentation retravaillée de
+l'auteur, authentification Discord, client PySide6 multiplateforme.
 
----
+**Écarté :** file d'attente des médias, historique / replay, injection de DLL pour le plein
+écran exclusif.
+
+**Toujours ouvert, à arbitrer plus tard :** support des URLs directes postées en texte et des
+stickers, modération (taille max, cooldown par auteur, bannissement d'un média), auto-update
+du client.
 
 ## 7. Environnement constaté
 
