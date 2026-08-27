@@ -160,10 +160,29 @@ Il devient **hébergeur de fichiers**, ce qu'il n'était pas : la v1 ne relayait
 Discord, et c'est Discord qui servait le média à tous les viewers. Désormais chaque viewer
 télécharge depuis la machine du host.
 
-> ⚠️ **La contrainte réelle n'est plus la taille, c'est le débit montant du host.** Un fichier
-> de 1 Go tiré par 10 viewers, c'est 10 Go à envoyer depuis la connexion du host. En fibre ça
-> passe, en VDSL/ADSL c'est rédhibitoire. À vérifier avant de s'engager sur des fichiers de
-> plusieurs Go.
+### Dimensionnement — mesuré le 2026-08-27
+
+Connexion du host : **928 Mbps descendant / 575 Mbps montant** (fibre).
+
+575 Mbps ≈ 72 Mo/s théoriques, ~60 Mo/s en débit soutenu réaliste. En gardant ~75 Mbps de marge
+pour le flux OBS et les à-coups, il reste **~500 Mbps pour servir les médias**.
+
+Grâce au service en Range (§ ci-dessous), les overlays tirent au **débit de la vidéo**, pas à la
+taille du fichier. C'est le débit qui dimensionne, et la taille devient presque indifférente :
+
+| Débit du média | Viewers simultanés tenables |
+|---|---|
+| 10 Mbps (1080p courant) | ~50 |
+| 25 Mbps (1080p/1440p haut débit) | ~20 |
+| 50 Mbps (4K) | ~10 |
+
+Même en supposant le pire — tous les viewers téléchargent le fichier entier à pleine vitesse
+sans streaming — 1 Go × 10 viewers passe en moins de 3 minutes.
+
+**Conclusion : le débit du host n'est pas un facteur limitant** pour un usage entre proches. Les
+deux vraies limites qui restent sont l'espace disque du serveur, et le **débit montant de celui
+qui envoie** : un viewer en ADSL (~1 Mbps montant) mettra plus de 2 h à téléverser 1 Go. C'est
+précisément ce que l'upload reprenable par morceaux rend supportable.
 
 ### Protocole d'upload
 
@@ -206,7 +225,7 @@ fonctionnent à l'identique quelle que soit la source (§4).
 | Taille maximale par fichier | 2 Go, configurable |
 | Rétention | suppression au bout de 24 h + purge au démarrage du serveur |
 | Quota disque total | plafond configurable, refus d'upload au-delà |
-| Débit montant du host | **à mesurer** — conditionne tout le reste |
+| Débit montant du host | ✅ mesuré, non limitant (voir ci-dessus) |
 
 ---
 
