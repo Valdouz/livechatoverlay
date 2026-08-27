@@ -1,0 +1,13 @@
+# Normalisation des fins de ligne.
+* text=auto
+
+# Ces fichiers sont exécutés par un interpréteur Unix : un CRLF les casse avec
+# un « bad interpreter » ou un « no such file or directory » incompréhensible.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+Caddyfile   text eol=lf
+*.yml       text eol=lf
+
+# Binaire : pas de conversion.
+*.ttf       binary
+*.png       binary
