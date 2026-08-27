@@ -7,7 +7,7 @@
 
 ## 1. Objectif de la v2
 
-Un panneau de contrôle réellement fonctionnel, moins de bugs, et un affichage que le viewer
+Un panneau de contrôle réellement fonctionnel, moins de bugs, et un affichage que le participant
 maîtrise : **où** ça s'affiche, **quelle taille**, **quelle police**, et une présentation
 retravaillée de **qui a posté**.
 
@@ -45,7 +45,7 @@ redevient possible.
 ## 3. Le panneau de contrôle
 
 **Le client gagne, toujours.** Les réglages vivent côté client et sont persistés localement ;
-le serveur ne fournit plus que des valeurs par défaut, utilisées tant que le viewer n'a touché
+le serveur ne fournit plus que des valeurs par défaut, utilisées tant que le participant n'a touché
 à rien. En v1 `media_scale` et `image_duration_seconds` étaient poussés dans *chaque* message et
 écrasaient tout — c'est ce qui rendait un panneau de réglages inutile.
 
@@ -59,7 +59,7 @@ le serveur ne fournit plus que des valeurs par défaut, utilisées tant que le v
 
 **Texte / légende**
 - Police, taille, couleur, contour
-- La police retenue est **embarquée dans le binaire** : sans ça, un viewer qui ne l'a pas
+- La police retenue est **embarquée dans le binaire** : sans ça, un participant qui ne l'a pas
   installée voit une substitution et l'affichage diffère d'une machine à l'autre.
 - Remplace le `font: 24px Impact` codé en dur de la v1.
 
@@ -80,7 +80,7 @@ le serveur ne fournit plus que des valeurs par défaut, utilisées tant que le v
 
 ## 4. Composition visuelle
 
-Référence : capture fournie le 2026-08-27 — style « alerte media-share » de stream.
+Référence : capture fournie le 2026-08-27 — style « alerte media-share ».
 Le bloc est composé **verticalement** et ancré dans le coin choisi :
 
 ```
@@ -109,7 +109,7 @@ composition se limite à la ligne auteur et au média.
 
 ## 5. Choix de l'écran — arbitré
 
-Le viewer choisit son moniteur dans le panneau. **Pas de commande admin.**
+Le participant choisit son moniteur dans le panneau. **Pas de commande admin.**
 
 Si le client détecte un plein écran **exclusif** sur le moniteur sélectionné — DWM court-circuité,
 aucune fenêtre ne peut composer par-dessus (cf. NOTES_V2 §3) — il **rejoue la même configuration
@@ -157,7 +157,7 @@ de Discord (500 Mo même avec Nitro). Les deux sources convergent sur la même d
 ### Ce que ça change pour le serveur
 
 Il devient **hébergeur de fichiers**, ce qu'il n'était pas : la v1 ne relayait qu'une URL du CDN
-Discord, et c'est Discord qui servait le média à tous les viewers. Désormais chaque viewer
+Discord, et c'est Discord qui servait le média à tous les participants. Désormais chaque participant
 télécharge depuis la machine du host.
 
 ### Dimensionnement — mesuré le 2026-08-27
@@ -172,18 +172,18 @@ médias**. Si le serveur tourne sur la machine qui diffuse un flux vers Twitch/Y
 Grâce au service en Range (§ ci-dessous), les overlays tirent au **débit de la vidéo**, pas à la
 taille du fichier. C'est le débit qui dimensionne, et la taille devient presque indifférente :
 
-| Débit du média | Viewers simultanés tenables |
+| Débit du média | Participants simultanés tenables |
 |---|---|
 | 10 Mbps (1080p courant) | ~50 |
 | 25 Mbps (1080p/1440p haut débit) | ~20 |
 | 50 Mbps (4K) | ~10 |
 
-Même en supposant le pire — tous les viewers téléchargent le fichier entier à pleine vitesse
-sans streaming — 1 Go × 10 viewers passe en moins de 3 minutes.
+Même en supposant le pire — tous les participants téléchargent le fichier entier à pleine vitesse
+sans streaming — 1 Go × 10 participants passe en moins de 3 minutes.
 
 **Conclusion : le débit du host n'est pas un facteur limitant** pour un usage entre proches. Les
 deux vraies limites qui restent sont l'espace disque du serveur, et le **débit montant de celui
-qui envoie** : un viewer en ADSL (~1 Mbps montant) mettra plus de 2 h à téléverser 1 Go. C'est
+qui envoie** : un participant en ADSL (~1 Mbps montant) mettra plus de 2 h à téléverser 1 Go. C'est
 précisément ce que l'upload reprenable par morceaux rend supportable.
 
 ### Protocole d'upload
@@ -220,14 +220,34 @@ Barre de progression pendant le transfert.
 L'auteur affiché est le compte Discord authentifié du client qui envoie — avatar et pseudo
 fonctionnent à l'identique quelle que soit la source (§4).
 
-### À arbitrer
+### Rétention — arbitré
 
-| Point | Proposition par défaut |
+| Point | Valeur |
 |---|---|
-| Taille maximale par fichier | 2 Go, configurable |
-| Rétention | suppression au bout de 24 h + purge au démarrage du serveur |
+| Taille maximale par fichier | **5 Go** |
+| Suppression | **10 min après que tous les participants ont fini de recevoir le média** |
+| Plafond absolu | 1 h après la diffusion, quoi qu'il arrive |
+| Purge au démarrage | oui — le dossier des médias est vidé au lancement du serveur |
 | Quota disque total | plafond configurable, refus d'upload au-delà |
 | Débit montant du host | ✅ mesuré, non limitant (voir ci-dessus) |
+
+**Comment le serveur sait qu'un média est « reçu » :** chaque overlay envoie un accusé sur le
+WebSocket quand il en a terminé avec le média — image affichée jusqu'au bout, ou vidéo lue
+jusqu'à la fin. Un simple suivi des octets servis sur `GET /media/{id}` ne suffirait pas : avec
+les requêtes Range, un média est tiré en dizaines de morceaux partiels et « fini » n'y a pas de
+définition claire.
+
+Le compte à rebours de 10 min démarre à l'accusé du **dernier** participant connecté au moment
+de la diffusion. Deux garde-fous indispensables :
+
+- **Plafond absolu à 1 h.** Sans lui, un participant qui coupe son PC en pleine réception laisse
+  le fichier sur le disque indéfiniment.
+- **Aucun participant connecté** au moment de la diffusion → le compte à rebours démarre
+  immédiatement.
+
+Avec 10 min de rétention, l'occupation disque est bornée par le débit d'envoi, pas par
+l'accumulation : le quota ne sert plus qu'à encaisser plusieurs uploads simultanés — trois
+fichiers de 5 Go en parallèle, c'est 15 Go.
 
 ---
 

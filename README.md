@@ -1,7 +1,7 @@
-# LiveChat Bot — Overlay Discord pour stream
+# LiveChat — partage de médias en overlay
 
-Affiche en temps réel les images et vidéos postées dans un salon Discord sous forme d'overlay
-transparent sur le bureau de chaque viewer.
+Affiche en temps réel les images et vidéos postées dans un salon Discord, en overlay transparent
+sur le bureau de chaque participant.
 
 > **La v2 est en préparation.** Périmètre et décisions : [SPEC_V2.md](SPEC_V2.md).
 > État des lieux de la v1 : [NOTES_V2.md](NOTES_V2.md).
@@ -17,7 +17,7 @@ Discord channel
   bot/bot.py          ← écoute Discord + serveur WebSocket   (machine du host)
       │
       ▼ WebSocket
-  overlay/overlay.py  ← fenêtre transparente click-through   (machine de chaque viewer)
+  overlay/overlay.py  ← fenêtre transparente click-through   (machine de chaque participant)
 ```
 
 Le bot et l'overlay tournent dans deux processus séparés, sur deux machines différentes ou sur
@@ -35,7 +35,7 @@ Côté host (le bot) :
 install.bat
 ```
 
-Côté viewer (l'overlay), depuis les sources :
+Côté participant (l'overlay), depuis les sources :
 
 ```bash
 overlay/install.bat
@@ -82,7 +82,7 @@ cp overlay/config.example.json overlay/config.json
 start.bat
 ```
 
-**Machine de chaque viewer :**
+**Machine de chaque participant :**
 ```bash
 overlay/start.bat
 ```
@@ -91,7 +91,7 @@ overlay/start.bat
 
 ## Compiler l'overlay en .exe
 
-Pour distribuer l'overlay aux viewers sans installer Python :
+Pour distribuer l'overlay aux participants sans installer Python :
 
 ```bash
 overlay/build.bat        # Windows  → overlay/dist/LiveChatOverlay.exe
