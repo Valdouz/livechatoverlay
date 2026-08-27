@@ -15,6 +15,13 @@ log = logging.getLogger(__name__)
 
 GIGA = 1024 ** 3
 
+#: Animations d'apparition proposées. Le nom est choisi par l'expéditeur et
+#: voyage avec le média ; le serveur ne fait que vérifier qu'il existe.
+ANIMATIONS = (
+    "fade", "slide-up", "slide-down", "slide-left", "slide-right",
+    "zoom", "bounce", "none",
+)
+
 DEFAULTS: dict[str, Any] = {
     # Stockage
     "disk_quota_bytes": 30 * GIGA,
@@ -25,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
     # Affichage — valeurs par défaut, chaque participant peut les surcharger
     "image_duration_seconds": 8,
     "media_scale_percent": 30,
+    "default_animation": "fade",   # utilisée par les médias venus de Discord
     # Discord
     "channel_id": None,          # salon surveillé ; None = aucun
     "upload_role_id": None,      # rôle requis pour envoyer ; None = tout le monde
@@ -98,6 +106,13 @@ class Settings:
                 return int(value)
             except (TypeError, ValueError):
                 raise SettingsError(f"{key} doit être un identifiant Discord numérique.") from None
+
+        if key == "default_animation":
+            if value not in ANIMATIONS:
+                raise SettingsError(
+                    f"Animation inconnue : {value!r}. Au choix : {', '.join(ANIMATIONS)}."
+                )
+            return value
 
         if key in _ID_LIST_FIELDS:
             if not isinstance(value, list):

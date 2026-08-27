@@ -226,7 +226,11 @@ class DropZone(QWidget):
     def _browse(self) -> None:
         chosen, _ = QFileDialog.getOpenFileName(
             self, "Envoyer un média", "",
-            "Images et vidéos (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm *.mov *.mkv);;"
+            "Médias (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm *.mov *.mkv "
+            "*.mp3 *.wav *.m4a *.flac *.ogg *.opus *.aac);;"
+            "Images (*.png *.jpg *.jpeg *.gif *.webp);;"
+            "Vidéos (*.mp4 *.webm *.mov *.mkv);;"
+            "Audio (*.mp3 *.wav *.m4a *.flac *.ogg *.opus *.aac);;"
             "Tous les fichiers (*)",
         )
         if chosen:
@@ -237,7 +241,7 @@ class Panel(QWidget):
     settings_changed = Signal()
     login_requested = Signal()
     logout_requested = Signal()
-    upload_requested = Signal(Path, str, str)
+    upload_requested = Signal(Path, str, str, str)
     upload_cancelled = Signal()
     admin_action = Signal(str, object)
 
@@ -465,6 +469,18 @@ class Panel(QWidget):
         self._target_names: dict[str, str] = {}
         layout.addWidget(Field("Destinataire", self._target_box))
 
+        # L'animation est choisie par l'expéditeur : c'est son envoi, c'est son
+        # entrée en scène. Les destinataires ne la règlent pas.
+        self._animation_box = QComboBox()
+        for key, label in theme.ANIMATIONS.items():
+            self._animation_box.addItem(label, key)
+        index = self._animation_box.findData(self._settings["animation"])
+        self._animation_box.setCurrentIndex(index if index >= 0 else 0)
+        self._animation_box.currentIndexChanged.connect(
+            lambda: self._settings.set("animation", self._animation_box.currentData())
+        )
+        layout.addWidget(Field("Animation d'apparition", self._animation_box))
+
         self._progress = QProgressBar()
         self._progress.setTextVisible(False)
         self._progress.hide()
@@ -490,7 +506,9 @@ class Panel(QWidget):
 
     def _on_file_chosen(self, path: Path) -> None:
         self.upload_requested.emit(
-            path, self._caption_field.text().strip(), self._target_box.currentData() or ""
+            path, self._caption_field.text().strip(),
+            self._target_box.currentData() or "",
+            self._animation_box.currentData() or "fade",
         )
 
     def show_participants(self, people: list) -> None:

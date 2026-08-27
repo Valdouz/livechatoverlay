@@ -38,7 +38,30 @@ CAPTION_OUTLINE_COLOR = QColor("#000000")
 CAPTION_OUTLINE_WIDTH = 5
 CAPTION_GAP = 10
 
-FADE_MS = 260
+ANIMATION_MS = 380
+
+#: Animations d'apparition. Le nom est choisi par l'expéditeur et voyage avec le
+#: média : c'est lui qui décide de la façon dont son envoi débarque à l'écran.
+ANIMATIONS = {
+    "fade": "Fondu",
+    "slide-up": "Monte du bas",
+    "slide-down": "Descend du haut",
+    "slide-left": "Entre par la droite",
+    "slide-right": "Entre par la gauche",
+    "zoom": "Zoom",
+    "bounce": "Rebond",
+    "none": "Aucune",
+}
+
+# -- carte audio -------------------------------------------------------------
+
+AUDIO_BACKGROUND = QColor(18, 18, 26, 235)
+AUDIO_ACCENT = QColor("#3ddc84")
+AUDIO_TRACK = QColor(255, 255, 255, 38)
+AUDIO_TITLE = QColor("#f0f0f6")
+AUDIO_HEIGHT_RATIO = 0.24     # hauteur de la carte, en fraction de sa largeur
+AUDIO_HEIGHT_MIN = 88
+AUDIO_HEIGHT_MAX = 170
 
 # -- panneau -----------------------------------------------------------------
 

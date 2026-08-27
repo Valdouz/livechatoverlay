@@ -241,7 +241,8 @@ class Api(QObject):
 
     # -- envoi de fichier -----------------------------------------------------
 
-    def upload(self, path: Path, caption: str = "", target: str = "") -> None:
+    def upload(self, path: Path, caption: str = "", target: str = "",
+               animation: str = "fade") -> None:
         if self._upload is not None:
             self.upload_failed.emit("Un envoi est déjà en cours.")
             return
@@ -274,6 +275,7 @@ class Api(QObject):
                 "offset": 0,
                 "caption": caption,
                 "target": target,
+                "animation": animation,
                 "handle": path.open("rb"),
             }
             self.upload_progress.emit(0, size)
@@ -315,7 +317,8 @@ class Api(QObject):
         if job is None:
             return
         body = json.dumps({"caption": job["caption"],
-                           "target_user_id": job["target"] or "all"}).encode()
+                           "target_user_id": job["target"] or "all",
+                           "animation": job["animation"]}).encode()
         reply = self._nam.post(
             self._request(f"/upload/{job['id']}/complete", json_body=True), body
         )

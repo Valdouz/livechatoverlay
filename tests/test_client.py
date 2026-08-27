@@ -125,7 +125,7 @@ def run() -> None:
         overlay._relayout()
 
         # -- peinture reelle -------------------------------------------------
-        overlay._opacity = 1.0
+        overlay._progress = 1.0
         canvas = QImage(screen.width(), screen.height(), QImage.Format_ARGB32)
         canvas.fill(Qt.transparent)
         overlay.render(canvas)
@@ -295,11 +295,12 @@ def run() -> None:
               panel._target_box.currentData() == "3", panel._target_box.currentText())
 
         emitted = []
-        panel.upload_requested.connect(lambda p, c, t: emitted.append((p.name, c, t)))
+        panel.upload_requested.connect(
+            lambda p, c, t, a: emitted.append((p.name, c, t, a)))
         panel._caption_field.setText("coucou")
         panel._on_file_chosen(Path("image.png"))
         check("la cible accompagne l'envoi",
-              emitted == [("image.png", "coucou", "3")], str(emitted))
+              emitted == [("image.png", "coucou", "3", "fade")], str(emitted))
 
         panel._target_box.setCurrentIndex(0)
         check("retour a tout le monde", panel.target_name() == "")
@@ -315,6 +316,77 @@ def run() -> None:
         overlay._on_image(png_bytes(300, 200))
         check("un media global ne l'annonce pas", overlay._name_text() == "Alice",
               overlay._name_text())
+
+        # -- animations -------------------------------------------------------
+        from client import theme as th
+
+        options = [panel._animation_box.itemData(i)
+                   for i in range(panel._animation_box.count())]
+        check("toutes les animations sont proposees",
+              options == list(th.ANIMATIONS), str(options))
+
+        panel._animation_box.setCurrentIndex(options.index("bounce"))
+        check("le choix d'animation est retenu", settings["animation"] == "bounce",
+              settings["animation"])
+        emitted.clear()
+        panel._on_file_chosen(Path("clip.mp4"))
+        check("l'animation accompagne l'envoi",
+              emitted and emitted[0][3] == "bounce", str(emitted))
+
+        settings.set("scale_percent", 30)
+        overlay.show_media(payload("m8", "image", "http://x/y.png", "Alice"))
+        overlay._on_image(png_bytes(400, 300))
+        base = overlay._block
+
+        for name in th.ANIMATIONS:
+            overlay._animation = name
+            overlay._progress = 0.0
+            start_offset, start_scale, start_opacity = overlay._animation_state()
+            overlay._progress = 1.0
+            end_offset, end_scale, end_opacity = overlay._animation_state()
+            check(f"animation « {name} » : etat final neutre",
+                  end_offset.manhattanLength() < 1.0
+                  and abs(end_scale - 1.0) < 0.02 and end_opacity > 0.98,
+                  f"{end_offset} {end_scale:.3f} {end_opacity:.3f}")
+            if name != "none":
+                moved = (start_offset.manhattanLength() > 1.0
+                         or abs(start_scale - 1.0) > 0.02 or start_opacity < 0.5)
+                check(f"animation « {name} » : etat initial distinct", moved,
+                      f"{start_offset} {start_scale:.3f} {start_opacity:.3f}")
+
+        overlay._animation = "slide-up"
+        overlay._progress = 0.0
+        offset, _, _ = overlay._animation_state()
+        check("« monte du bas » demarre plus bas", offset.y() > 0, str(offset))
+        overlay._animation = "slide-left"
+        offset, _, _ = overlay._animation_state()
+        check("« entre par la droite » demarre a droite", offset.x() > 0, str(offset))
+
+        overlay._animation = "fade"
+        overlay._progress = 1.0
+        check("la zone repeinte deborde du bloc",
+              overlay._paint_region().contains(base), str(overlay._paint_region()))
+
+        # -- audio -------------------------------------------------------------
+        audio = payload("m9", "audio", "http://x/son.mp3", "Alice", "écoute ça")
+        audio["media"]["filename"] = "un_morceau_vraiment_long.mp3"
+        audio["media"]["content_type"] = "audio/mpeg"
+        overlay.show_media(audio)
+        check("l'audio produit une carte", not overlay._block.isEmpty(), str(overlay._block))
+        size = overlay._media_size()
+        check("la carte audio est large et basse",
+              size.width() > size.height() * 2, f"{size.width()}x{size.height()}")
+        check("la hauteur reste dans les bornes",
+              th.AUDIO_HEIGHT_MIN <= size.height() <= th.AUDIO_HEIGHT_MAX, str(size.height()))
+        check("l'audio accuse reception sans attendre d'image",
+              "m9" in acked, str(acked))
+
+        canvas2 = QImage(screen.width(), screen.height(), QImage.Format_ARGB32)
+        canvas2.fill(Qt.transparent)
+        overlay._progress = 1.0
+        overlay.render(canvas2)
+        painted = canvas2.pixelColor(overlay._block.center())
+        check("la carte audio est reellement peinte", painted.alpha() > 0, str(painted))
 
         # -- le logo doit vraiment porter l'anneau vert -----------------------
         from client.panel import logo

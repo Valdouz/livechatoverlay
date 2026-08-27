@@ -7,18 +7,41 @@ charge de les servir. Seuls les envois faits depuis le client occupent du disque
 from __future__ import annotations
 
 import logging
+import mimetypes
 
 import discord
 
 log = logging.getLogger(__name__)
 
 
-def kind_of(content_type: str) -> str | None:
-    if content_type.startswith("image/"):
-        return "image"
-    if content_type.startswith("video/"):
-        return "video"
+#: Certains conteneurs audio sont annoncés en video/* ou en application/* selon
+#: le navigateur qui a servi le fichier — on retombe alors sur l'extension.
+AUDIO_EXTENSIONS = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".oga",
+                    ".opus", ".aac", ".wma", ".aiff", ".aif")
+
+
+def _from_mime(content_type: str) -> str | None:
+    for prefix in ("audio", "image", "video"):
+        if content_type.startswith(f"{prefix}/"):
+            return prefix
     return None
+
+
+def kind_of(content_type: str, filename: str = "") -> str | None:
+    """Image, vidéo, audio, ou rien du tout.
+
+    L'extension prime pour l'audio : `mimetypes` ignore `.flac` ou `.opus` sur
+    certains systèmes, et Discord annonce parfois ces conteneurs en `video/*`.
+    Pour le reste on croit le type déclaré, puis on retombe sur l'extension —
+    un envoi sans type annoncé reste ainsi exploitable.
+    """
+    if filename.lower().endswith(AUDIO_EXTENSIONS):
+        return "audio"
+    kind = _from_mime(content_type)
+    if kind:
+        return kind
+    guessed, _ = mimetypes.guess_type(filename)
+    return _from_mime(guessed or "")
 
 
 class LiveChatBot(discord.Client):
@@ -99,7 +122,7 @@ class LiveChatBot(discord.Client):
     def _extract(self, message: discord.Message) -> dict | None:
         for attachment in message.attachments:
             content_type = attachment.content_type or ""
-            kind = kind_of(content_type)
+            kind = kind_of(content_type, attachment.filename)
             if kind:
                 return {
                     "id": None,

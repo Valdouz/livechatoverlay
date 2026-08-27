@@ -189,14 +189,14 @@ class LiveChatClient:
 
     # -- envoi ----------------------------------------------------------------
 
-    def _on_upload(self, path: Path, caption: str, target: str) -> None:
+    def _on_upload(self, path: Path, caption: str, target: str, animation: str) -> None:
         try:
             total = path.stat().st_size
         except OSError as exc:
             self._panel.notify(f"Fichier illisible : {exc}", error=True)
             return
         self._panel.upload_started(total)
-        self._api.upload(path, caption, target)
+        self._api.upload(path, caption, target, animation)
 
     def _on_upload_finished(self, payload: dict) -> None:
         delivered = payload.get("delivered", 0)

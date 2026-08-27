@@ -288,11 +288,19 @@ async def upload_complete(request: web.Request) -> web.Response:
         body = {}
 
     from .discordbot import kind_of
+    from .settings import ANIMATIONS
 
-    kind = kind_of(meta["content_type"])
+    kind = kind_of(meta["content_type"], meta["filename"])
     if kind is None:
         store.delete(meta["id"])
-        raise web.HTTPBadRequest(reason="Seules les images et les vidéos sont acceptées")
+        raise web.HTTPBadRequest(
+            reason="Seuls les images, vidéos et fichiers audio sont acceptés"
+        )
+
+    # L'animation est choisie par celui qui envoie, pas par ceux qui reçoivent.
+    animation = str(body.get("animation") or request.app["settings"]["default_animation"])
+    if animation not in ANIMATIONS:
+        animation = request.app["settings"]["default_animation"]
 
     media = {
         "id": meta["id"],
@@ -301,6 +309,7 @@ async def upload_complete(request: web.Request) -> web.Response:
         "content_type": meta["content_type"],
         "filename": meta["filename"],
         "source": "upload",
+        "animation": animation,
     }
     author = {
         "id": str(identity.user_id),

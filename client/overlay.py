@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import (QBuffer, QByteArray, QIODevice, QPoint, QRect, QRectF,
-                            QSize, Qt, QTimer, QUrl, Signal)
+from PySide6.QtCore import (QBuffer, QByteArray, QEasingCurve, QIODevice, QPoint,
+                            QPointF, QRect, QRectF, QSize, Qt, QTimer, QUrl, Signal)
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QMovie, QPainter,
                            QPainterPath, QPen, QPixmap)
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
@@ -56,7 +56,9 @@ class Overlay(QWidget):
         self._avatar: QPixmap | None = None
         self._caption = ""
         self._private = False
-        self._opacity = 0.0
+        self._filename = ""
+        self._animation = "fade"
+        self._progress = 0.0
         self._block = QRect()
 
         # -- vidéo ------------------------------------------------------------
@@ -67,6 +69,8 @@ class Overlay(QWidget):
         self._player.setVideoSink(self._sink)
         self._player.setAudioOutput(self._audio)
         self._player.mediaStatusChanged.connect(self._on_media_status)
+        # La carte audio affiche l'avancement : il faut la repeindre en continu.
+        self._player.positionChanged.connect(lambda _: self.update(self._paint_region()))
         self._player.errorOccurred.connect(
             lambda _, message: log.warning("Lecture vidéo : %s", message)
         )
@@ -77,9 +81,9 @@ class Overlay(QWidget):
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.clear)
 
-        self._fade = QTimer(self)
-        self._fade.timeout.connect(self._step_fade)
-        self._fade_target = 0.0
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._step_animation)
+        self._anim_target = 0.0
 
         self._topmost = QTimer(self)
         self._topmost.timeout.connect(lambda: platform.reassert_topmost(self))
@@ -144,6 +148,8 @@ class Overlay(QWidget):
         self._reset_media()
         self._media_id = media.get("id")
         self._kind = media.get("kind", "image")
+        self._animation = media.get("animation", "fade")
+        self._filename = media.get("filename", "")
         self._author = author.get("display_name", "")
         self._caption = (payload.get("caption") or "").strip()
         self._private = bool(payload.get("private"))
@@ -154,15 +160,15 @@ class Overlay(QWidget):
             self._fetch(avatar_url, self._on_avatar)
 
         url = media.get("url", "")
-        if self._kind == "video":
-            self._play_video(url)
+        if self._kind in ("video", "audio"):
+            self._play_media(url)
         else:
             self._fetch(url, self._on_image)
 
         self._fade_to(1.0)
 
     def clear(self) -> None:
-        if self._media_id or self._pixmap or self._frame_image:
+        if self._media_id or self._pixmap or self._frame_image or self._kind == "audio":
             self._fade_to(0.0)
         else:
             self._reset_media()
@@ -181,6 +187,8 @@ class Overlay(QWidget):
         self._caption = ""
         self._author = ""
         self._private = False
+        self._filename = ""
+        self._kind = ""
         self._avatar = None
         self._block = QRect()
         self.update()
@@ -254,9 +262,14 @@ class Overlay(QWidget):
         self._hide_timer.start(self._settings.image_duration * 1000)
         self._acknowledge()
 
-    def _play_video(self, url: str) -> None:
+    def _play_media(self, url: str) -> None:
+        """Vidéo et audio passent par le même lecteur ; seul le rendu diffère."""
         self._player.setSource(QUrl(self._authorized(url)))
         self._player.play()
+        if self._kind == "audio":
+            # Pas d'image à attendre : la carte peut être placée tout de suite.
+            self._relayout()
+            self._acknowledge()
 
     def _on_frame(self, frame) -> None:
         if not frame.isValid():
@@ -294,35 +307,85 @@ class Overlay(QWidget):
     # -- fondu ----------------------------------------------------------------
 
     def _fade_to(self, target: float) -> None:
-        self._fade_target = target
+        self._anim_target = target
         if target > 0 and not self.isVisible():
             self.show()
             platform.make_click_through(self)
             platform.reassert_topmost(self)
-        self._fade.start(16)
-
-    def _step_fade(self) -> None:
-        span = 16 / max(theme.FADE_MS, 1)
-        if self._opacity < self._fade_target:
-            self._opacity = min(self._fade_target, self._opacity + span)
-        elif self._opacity > self._fade_target:
-            self._opacity = max(self._fade_target, self._opacity - span)
-        else:
-            self._fade.stop()
-            if self._fade_target == 0.0:
+        if self._animation == "none":
+            self._progress = target
+            self.update(self._paint_region())
+            if target == 0.0:
                 self._reset_media()
             return
-        self.update(self._block.adjusted(-60, -60, 60, 60))
+        self._anim_timer.start(16)
+
+    def _step_animation(self) -> None:
+        step = 16 / max(theme.ANIMATION_MS, 1)
+        if self._progress < self._anim_target:
+            self._progress = min(self._anim_target, self._progress + step)
+        elif self._progress > self._anim_target:
+            self._progress = max(self._anim_target, self._progress - step)
+        else:
+            self._anim_timer.stop()
+            if self._anim_target == 0.0:
+                self._reset_media()
+            return
+        self.update(self._paint_region())
+
+    def _paint_region(self) -> QRect:
+        """Zone à repeindre : les animations déplacent le bloc hors de ses bornes."""
+        if self._block.isEmpty():
+            return self.rect()
+        margin = max(80, int(max(self._block.width(), self._block.height()) * 0.7))
+        return self._block.adjusted(-margin, -margin, margin, margin)
+
+    def _animation_state(self) -> tuple[QPointF, float, float]:
+        """Décalage, échelle et opacité pour l'avancement courant."""
+        progress = self._progress
+        name = self._animation
+        if name == "none":
+            return QPointF(0, 0), 1.0, 1.0 if progress > 0.5 else 0.0
+
+        eased = QEasingCurve(QEasingCurve.OutCubic).valueForProgress(progress)
+        if name == "fade":
+            return QPointF(0, 0), 1.0, eased
+
+        if name.startswith("slide-"):
+            span = max(self._block.width(), self._block.height()) * 0.45
+            travel = span * (1.0 - eased)
+            direction = {
+                "slide-up": (0, 1), "slide-down": (0, -1),
+                "slide-left": (1, 0), "slide-right": (-1, 0),
+            }[name]
+            return QPointF(direction[0] * travel, direction[1] * travel), 1.0, eased
+
+        if name == "zoom":
+            return QPointF(0, 0), 0.72 + 0.28 * eased, eased
+
+        if name == "bounce":
+            # OutBack dépasse volontairement 1 puis revient : c'est le rebond.
+            back = QEasingCurve(QEasingCurve.OutBack).valueForProgress(progress)
+            return QPointF(0, 0), 0.55 + 0.45 * back, min(1.0, progress * 2.2)
+
+        return QPointF(0, 0), 1.0, eased
 
     # -- géométrie ------------------------------------------------------------
 
     def _media_size(self) -> QSize:
+        area = self.rect()
+        scale = self._settings.scale_percent / 100.0
+        max_w = max(1, int(area.width() * scale))
+
+        if self._kind == "audio":
+            # Rien à afficher du fichier lui-même : une carte de proportions fixes.
+            height = int(max_w * theme.AUDIO_HEIGHT_RATIO)
+            height = max(theme.AUDIO_HEIGHT_MIN, min(theme.AUDIO_HEIGHT_MAX, height))
+            return QSize(max_w, height)
+
         source = self._source_size()
         if source.isEmpty():
             return QSize()
-        area = self.rect()
-        scale = self._settings.scale_percent / 100.0
-        max_w = int(area.width() * scale)
         max_h = int(area.height() * scale * 1.5)
         return source.scaled(max_w, max_h, Qt.KeepAspectRatio)
 
@@ -389,14 +452,27 @@ class Overlay(QWidget):
     # -- peinture -------------------------------------------------------------
 
     def paintEvent(self, event) -> None:
-        if self._block.isEmpty() or self._opacity <= 0.01:
+        if self._block.isEmpty():
+            return
+        offset, scale, opacity = self._animation_state()
+        if opacity <= 0.01:
             return
 
         painter = QPainter(self)
         painter.setRenderHints(
             QPainter.Antialiasing | QPainter.SmoothPixmapTransform | QPainter.TextAntialiasing
         )
-        painter.setOpacity(self._opacity * (self._settings["opacity_percent"] / 100.0))
+        painter.setOpacity(opacity * (self._settings["opacity_percent"] / 100.0))
+
+        # L'animation déplace et met à l'échelle l'ensemble du bloc, autour de son
+        # centre : le média, l'auteur et la légende restent solidaires.
+        if not offset.isNull():
+            painter.translate(offset)
+        if abs(scale - 1.0) > 0.001:
+            center = QPointF(self._block.center())
+            painter.translate(center)
+            painter.scale(scale, scale)
+            painter.translate(-center)
 
         name_font, caption_font = self._fonts()
         media = self._media_size()
@@ -409,7 +485,10 @@ class Overlay(QWidget):
 
         # Le média garde sa taille : c'est le bloc qui s'élargit, pas lui.
         media_rect = QRect(self._block.left(), top, media.width(), media.height())
-        self._paint_media(painter, media_rect)
+        if self._kind == "audio":
+            self._paint_audio(painter, media_rect)
+        else:
+            self._paint_media(painter, media_rect)
 
         if position == "over" and (self._author or self._avatar):
             self._paint_author(
@@ -470,6 +549,60 @@ class Overlay(QWidget):
             width += QFontMetrics(font).horizontalAdvance(self._name_text())
             width += theme.NAME_OUTLINE_WIDTH
         return width
+
+    def _paint_audio(self, painter: QPainter, rect: QRect) -> None:
+        """Un fichier audio n'a rien à montrer : on dessine une carte de lecture
+        avec le nom du fichier et l'avancement."""
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(theme.MEDIA_SHADOW)
+        painter.drawRoundedRect(
+            QRectF(rect).adjusted(-2, 2, 2, 6), theme.MEDIA_RADIUS + 2, theme.MEDIA_RADIUS + 2
+        )
+        painter.setBrush(theme.AUDIO_BACKGROUND)
+        painter.drawRoundedRect(QRectF(rect), theme.MEDIA_RADIUS, theme.MEDIA_RADIUS)
+
+        pad = max(12, rect.height() // 6)
+        disc = rect.height() - 2 * pad
+        circle = QRectF(rect.left() + pad, rect.top() + pad, disc, disc)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(theme.AUDIO_ACCENT, max(2, disc // 14)))
+        painter.drawEllipse(circle)
+
+        note = fonts.display_font(max(12, int(disc * 0.42)), QFont.Black)
+        painter.setFont(note)
+        painter.setPen(theme.AUDIO_ACCENT)
+        painter.drawText(circle, Qt.AlignCenter, "♪")
+
+        text_left = int(circle.right()) + pad
+        text_width = rect.right() - text_left - pad
+        title_font = fonts.display_font(max(11, int(disc * 0.28)), QFont.Bold)
+        metrics = QFontMetrics(title_font)
+        title = metrics.elidedText(
+            self._filename or "Audio", Qt.ElideMiddle, max(text_width, 1)
+        )
+        painter.setFont(title_font)
+        painter.setPen(theme.AUDIO_TITLE)
+        painter.drawText(
+            QRect(text_left, rect.top() + pad, text_width, disc // 2),
+            Qt.AlignLeft | Qt.AlignVCenter, title,
+        )
+
+        # Barre d'avancement : sans elle on ne saurait pas combien il reste.
+        bar_h = max(4, disc // 10)
+        bar = QRectF(text_left, rect.bottom() - pad - bar_h, text_width, bar_h)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(theme.AUDIO_TRACK)
+        painter.drawRoundedRect(bar, bar_h / 2, bar_h / 2)
+
+        duration = self._player.duration()
+        if duration > 0:
+            done = max(0.0, min(1.0, self._player.position() / duration))
+            if done > 0:
+                painter.setBrush(theme.AUDIO_ACCENT)
+                filled = QRectF(bar.left(), bar.top(), bar.width() * done, bar_h)
+                painter.drawRoundedRect(filled, bar_h / 2, bar_h / 2)
+        painter.restore()
 
     def _paint_author(self, painter: QPainter, origin: QPoint, font: QFont,
                       shadow: bool = False) -> None:

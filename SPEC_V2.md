@@ -177,6 +177,7 @@ Le panneau admin lit et écrit les réglages du serveur — plus besoin d'un acc
 | Plafond absolu de rétention | 1 h |
 | Durée d'affichage par défaut des images | 8 s |
 | Taille par défaut des médias | 30 % de l'écran |
+| Animation des médias venus de Discord | `fade` |
 | Salon Discord surveillé | — |
 | Qui peut envoyer | tout le monde / porteurs d'un rôle donné |
 | Liste des admins | — |
@@ -265,6 +266,34 @@ nativement.
 
 L'upload est réservé aux comptes authentifiés (§6). Un endpoint d'upload ouvert sur un serveur
 public, c'est un disque dur offert au premier venu.
+
+### Types acceptés
+
+Images, vidéos, et **fichiers audio** : mp3, wav, m4a, flac, ogg, opus, aac. Un audio n'a
+rien à montrer : l'overlay dessine une **carte de lecture** — pastille verte, nom du fichier
+et barre d'avancement — au lieu d'un cadre vide.
+
+Le type est déduit du MIME annoncé, avec repli sur l'extension. L'extension prime pour l'audio :
+`mimetypes` ignore `.flac` et `.opus` sur certains systèmes, et Discord annonce parfois ces
+conteneurs en `video/*`.
+
+### Animation d'apparition
+
+**Choisie par l'expéditeur**, pas par ceux qui reçoivent : c'est son envoi, c'est son entrée
+en scène. Le nom voyage avec le média ; le serveur vérifie seulement qu'il existe.
+
+| | |
+|---|---|
+| `fade` | fondu (défaut) |
+| `slide-up` / `slide-down` | monte du bas / descend du haut |
+| `slide-left` / `slide-right` | entre par la droite / par la gauche |
+| `zoom` | grandit depuis 72 % |
+| `bounce` | dépasse puis revient |
+| `none` | apparition immédiate |
+
+L'animation transforme le **bloc entier** autour de son centre : média, ligne auteur et légende
+restent solidaires. Les médias venus de Discord n'ont pas d'expéditeur pour choisir — ils
+prennent `default_animation`, réglable dans le panneau admin.
 
 ### Destinataire
 

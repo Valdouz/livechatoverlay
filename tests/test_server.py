@@ -275,6 +275,59 @@ async def run() -> None:
         check("requete Range honoree -> 206",
               response.status == 206 and chunk == payload[:100], f"recu {response.status}")
 
+        # -- audio et animations ----------------------------------------------
+        from server.discordbot import kind_of
+        for name, expected in (("son.mp3", "audio"), ("voix.wav", "audio"),
+                               ("piste.flac", "audio"), ("extrait.m4a", "audio"),
+                               ("boucle.ogg", "audio"), ("photo.png", "image"),
+                               ("clip.mp4", "video"), ("archive.zip", None)):
+            check(f"type reconnu pour {name}", kind_of("", name) == expected,
+                  f"{kind_of('', name)} au lieu de {expected}")
+        check("type MIME audio reconnu sans extension",
+              kind_of("audio/mpeg", "sans-extension") == "audio")
+
+        await client.patch("/admin/settings", headers=auth(admin),
+                           json={"max_file_bytes": 8 * 1024 * 1024})
+        son = b"ID3" + bytes(4096)
+        response = await client.post("/upload/init", headers=auth(member),
+                                     json={"filename": "chanson.mp3", "size": len(son),
+                                           "content_type": "application/octet-stream"})
+        up = await response.json()
+        await client.put(f"/upload/{up['id']}?offset=0", headers=auth(member), data=son)
+        response = await client.post(f"/upload/{up['id']}/complete", headers=auth(member),
+                                     json={"animation": "bounce"})
+        result = await response.json()
+        check("un mp3 est accepte", response.status == 200, str(result))
+        check("il est classe comme audio", result["media"]["kind"] == "audio",
+              str(result["media"]))
+        check("l'animation choisie est transmise",
+              result["media"]["animation"] == "bounce", str(result["media"]))
+        store_.delete(result["media"]["id"])
+
+        response = await client.post("/upload/init", headers=auth(member),
+                                     json={"filename": "autre.mp3", "size": len(son),
+                                           "content_type": "audio/mpeg"})
+        up = await response.json()
+        await client.put(f"/upload/{up['id']}?offset=0", headers=auth(member), data=son)
+        response = await client.post(f"/upload/{up['id']}/complete", headers=auth(member),
+                                     json={"animation": "n-importe-quoi"})
+        result = await response.json()
+        check("une animation inconnue retombe sur le defaut",
+              result["media"]["animation"] == "fade", str(result["media"]))
+        store_.delete(result["media"]["id"])
+
+        response = await client.patch("/admin/settings", headers=auth(admin),
+                                      json={"default_animation": "zoom"})
+        check("l'animation par defaut est reglable", response.status == 200)
+        response = await client.patch("/admin/settings", headers=auth(admin),
+                                      json={"default_animation": "inexistante"})
+        check("une animation par defaut inconnue est refusee", response.status == 400,
+              f"recu {response.status}")
+
+        await client.patch("/admin/settings", headers=auth(admin),
+                           json={"max_file_bytes": 4 * 1024 * 1024,
+                                 "default_animation": "fade"})
+
         # -- retention --------------------------------------------------------
         store = app["store"]
         store.track(media_id, {"client-a", "client-b"})

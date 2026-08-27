@@ -44,6 +44,9 @@ def build_app(config: Config, *, start_bot: bool = True) -> web.Application:
         `target_user` restreint l'envoi à un seul compte Discord ; par défaut le
         média part sur tous les écrans.
         """
+        # Un média venu de Discord n'a pas d'expéditeur pour choisir : il prend
+        # l'animation par défaut de l'instance, réglable dans le panneau admin.
+        media.setdefault("animation", settings["default_animation"])
         payload = {
             "type": "media",
             "media": media,
