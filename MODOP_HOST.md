@@ -4,7 +4,7 @@
 
 ### 1. Configurer le bot
 
-Ouvre `config.json` et remplis :
+Copie `config.example.json` en `config.json`, puis remplis :
 
 ```json
 {
@@ -33,7 +33,7 @@ Dans ta box/routeur, crée une règle de **redirection de port** :
 
 ### 3. Préparer le config.json des autres
 
-Ouvre `overlay/config.json` et mets **ton IP** :
+Copie `overlay/config.example.json` en `overlay/config.json` et mets **ton IP** :
 
 ```json
 {
@@ -57,9 +57,10 @@ overlay/build.bat
 
 ## Ce que tu fais à chaque session
 
-1. Lance `start.bat` → le bot démarre et l'overlay s'ouvre sur ton écran
-2. Les autres lancent leur `LiveChatOverlay.exe`
-3. Quand quelqu'un poste une image/vidéo dans le salon Discord, elle apparaît sur tous les écrans
+1. Lance `start.bat` → le bot démarre
+2. Lance ton propre overlay : `overlay/start.bat` (ou ton `LiveChatOverlay.exe`)
+3. Les autres lancent leur `LiveChatOverlay.exe`
+4. Quand quelqu'un poste une image/vidéo dans le salon Discord, elle apparaît sur tous les écrans
 
 ---
 

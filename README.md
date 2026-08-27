@@ -1,6 +1,10 @@
 # LiveChat Bot — Overlay Discord pour stream
 
-Affiche en temps réel les images et vidéos postées dans un salon Discord sous forme d'overlay transparent sur ton bureau (ou en stream).
+Affiche en temps réel les images et vidéos postées dans un salon Discord sous forme d'overlay
+transparent sur le bureau de chaque viewer.
+
+> **La v2 est en préparation.** Périmètre et décisions : [SPEC_V2.md](SPEC_V2.md).
+> État des lieux de la v1 : [NOTES_V2.md](NOTES_V2.md).
 
 ---
 
@@ -10,44 +14,44 @@ Affiche en temps réel les images et vidéos postées dans un salon Discord sous
 Discord channel
       │
       ▼
-  bot/bot.py          ← écoute les messages Discord + serveur WebSocket
+  bot/bot.py          ← écoute Discord + serveur WebSocket   (machine du host)
       │
       ▼ WebSocket
-  overlay/overlay.py  ← fenêtre transparente click-through (Windows)
+  overlay/overlay.py  ← fenêtre transparente click-through   (machine de chaque viewer)
 ```
 
-Il y a deux modes de lancement :
-
-| Mode | Description |
-|------|-------------|
-| **All-in-one** (`main.py`) | Bot + overlay dans le même processus |
-| **Séparé** | Bot sur une machine, overlay sur une autre |
+Le bot et l'overlay tournent dans deux processus séparés, sur deux machines différentes ou sur
+la même.
 
 ---
 
 ## Installation
 
+**Prérequis :** Python 3.x. L'overlay est click-through sur Windows, macOS et Linux/X11.
+
+Côté host (le bot) :
+
 ```bash
 install.bat
 ```
 
-Installe toutes les dépendances Python depuis `requirements.txt`.
+Côté viewer (l'overlay), depuis les sources :
 
-**Prérequis :** Python 3.x, Windows (pour l'overlay click-through)
+```bash
+overlay/install.bat
+```
 
 ---
 
 ## Configuration
 
-### Bot + all-in-one (`config.json` à la racine)
+Les fichiers de configuration réels ne sont **pas** dans le dépôt : ils contiennent le token
+Discord et l'adresse du serveur. Partir des exemples fournis.
 
-```json
-{
-  "discord_token": "TON_TOKEN_ICI",
-  "channel_id": 123456789,
-  "port": 3000,
-  "image_duration_seconds": 8
-}
+### Bot — `config.json` à la racine
+
+```bash
+cp config.example.json config.json
 ```
 
 | Champ | Description |
@@ -56,33 +60,29 @@ Installe toutes les dépendances Python depuis `requirements.txt`.
 | `channel_id` | ID du salon Discord à surveiller |
 | `port` | Port du serveur WebSocket (défaut : `3000`) |
 | `image_duration_seconds` | Durée d'affichage des images en secondes (défaut : `8`) |
+| `media_scale` | Taille du média en % de l'écran (défaut : `30`) |
 
-### Overlay client (`overlay/config.json`)
+### Overlay — `overlay/config.json`
 
-```json
-{
-  "server": "http://IP_DU_BOT:3000"
-}
+```bash
+cp overlay/config.example.json overlay/config.json
 ```
+
+| Champ | Description |
+|-------|-------------|
+| `server` | Adresse du serveur, ex. `http://192.168.1.42:3000` |
+| `admin` | Affiche la section admin du panneau (défaut : `false`) |
 
 ---
 
 ## Lancement
 
-### Mode all-in-one (bot + overlay sur la même machine)
-
+**Machine du host :**
 ```bash
 start.bat
 ```
 
-### Mode séparé
-
-**Sur la machine streamer (bot) :**
-```bash
-bot/start.bat
-```
-
-**Sur la machine overlay :**
+**Machine de chaque viewer :**
 ```bash
 overlay/start.bat
 ```
@@ -91,24 +91,28 @@ overlay/start.bat
 
 ## Compiler l'overlay en .exe
 
-Pour distribuer l'overlay sans Python :
+Pour distribuer l'overlay aux viewers sans installer Python :
 
 ```bash
-overlay/build.bat
+overlay/build.bat        # Windows  → overlay/dist/LiveChatOverlay.exe
+overlay/build_mac.sh     # macOS    (non fonctionnel en l'état, cf. NOTES_V2.md)
 ```
 
-Génère `overlay/dist/LiveChatOverlay.exe`. Distribuer avec le fichier `config.json` contenant l'adresse IP du bot.
+Distribuer l'exécutable **avec** un `config.json` contenant l'adresse du serveur.
 
 ---
 
 ## Fonctionnement
 
 1. Le bot Discord surveille le salon configuré
-2. Quand une image ou vidéo est postée, le bot la diffuse via WebSocket
-3. L'overlay l'affiche en bas à droite avec le nom de l'auteur
-4. Les images disparaissent après `image_duration_seconds` secondes
-5. Les vidéos disparaissent à la fin de leur lecture
-6. La fenêtre est click-through (les clics passent à travers)
+2. Quand une image, une vidéo ou un gif Tenor y est posté, le bot le diffuse par WebSocket
+3. L'overlay l'affiche en bas à droite, avec le pseudo de l'auteur et le texte du message
+4. Les images disparaissent après `image_duration_seconds`, les vidéos en fin de lecture
+5. La fenêtre est click-through : les clics passent au travers
+
+Le panneau de l'overlay (icône dans la zone de notification) donne accès au volume et au
+lancement au démarrage. En mode admin, il permet aussi de lister les clients connectés et de
+retirer un média ou couper le son pour tout le monde.
 
 ---
 
@@ -116,15 +120,13 @@ Génère `overlay/dist/LiveChatOverlay.exe`. Distribuer avec le fichier `config.
 
 | Fichier | Rôle |
 |---------|------|
-| `main.py` | All-in-one (bot + overlay + serveur) |
-| `bot/bot.py` | Bot seul + serveur WebSocket |
-| `overlay/overlay.py` | Client overlay (fenêtre transparente) |
-| `overlay.html` | UI frontend (WebSocket + animations CSS) |
-| `config.json` | Configuration principale |
-| `overlay/config.json` | Config du client overlay |
-| `install.bat` | Installation des dépendances |
-| `start.bat` | Lancement all-in-one |
+| `bot/bot.py` | Bot Discord + serveur WebSocket + API admin |
+| `overlay/overlay.py` | Client overlay (fenêtre transparente PyQt5) |
+| `config.example.json` | Modèle de configuration du bot |
+| `overlay/config.example.json` | Modèle de configuration du client |
 | `overlay/build.bat` | Compilation en .exe |
+| `start.bat` | Lancement du bot |
+| `overlay/start.bat` | Lancement de l'overlay depuis les sources |
 
 ---
 
@@ -133,4 +135,4 @@ Génère `overlay/dist/LiveChatOverlay.exe`. Distribuer avec le fichier `config.
 1. Aller sur [discord.com/developers/applications](https://discord.com/developers/applications)
 2. Créer une application → onglet **Bot** → **Reset Token**
 3. Activer **Message Content Intent** dans les Privileged Gateway Intents
-4. Inviter le bot sur ton serveur avec la permission `Read Messages`
+4. Inviter le bot sur le serveur avec la permission `Read Messages`
