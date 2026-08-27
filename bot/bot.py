@@ -95,12 +95,8 @@ async def ws_handler(request):
         print(f"- Client déconnecté : {host} ({ip})")
     return ws
 
-HTML_PATH = os.path.join(BASE_DIR, "overlay.html")
-
 async def index_handler(request):
-    with open(HTML_PATH, "r", encoding="utf-8") as f:
-        html = f.read().replace("{{PORT}}", str(PORT))
-    return web.Response(text=html, content_type="text/html")
+    return web.json_response({"service": "livechat", "clients": len(ws_clients)})
 
 # ── API Admin ──────────────────────────────────────────────────────────────────
 
