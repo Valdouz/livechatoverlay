@@ -297,7 +297,7 @@ def run() -> None:
         # -- l'envoi se fait en deux temps --------------------------------------
         emitted = []
         panel.upload_requested.connect(
-            lambda p, c, t, a: emitted.append((p.name, c, t, a)))
+            lambda p, c, t, a, ds, de: emitted.append((p.name, c, t, a, ds, de)))
 
         sample = Path(tmp) / "image.png"
         sample.write_bytes(png_bytes(32, 32))
@@ -311,7 +311,7 @@ def run() -> None:
         panel._caption_field.setText("coucou")
         panel._send()
         check("le bouton envoie avec la legende saisie apres coup",
-              emitted == [("image.png", "coucou", "3", "fade")], str(emitted))
+              emitted == [("image.png", "coucou", "3", "fade", 0, 0)], str(emitted))
 
         emitted.clear()
         panel.select_file(sample)
@@ -535,6 +535,77 @@ def run() -> None:
         settings.set("audio_device", "")
         panel.refresh_audio_devices()
         overlay.apply_volume()
+
+        # -- decoupe avant envoi ------------------------------------------------
+        from client.editor import RangeBar, clock
+        from client.panel import TRIMMABLE
+
+        for name, trimmable in (("clip.mp4", True), ("son.mp3", True),
+                                ("photo.png", False), ("dessin.gif", False)):
+            check(f"{name} {'se decoupe' if trimmable else 'ne se decoupe pas'}",
+                  (Path(name).suffix.lower() in TRIMMABLE) is trimmable)
+
+        check("les durees sont lisibles", clock(65400) == "1:05.4", clock(65400))
+
+        barre = RangeBar()
+        barre.resize(400, 46)
+        vus = []
+        barre.changed.connect(lambda a, b: vus.append((a, b)))
+        barre.set_duration(60000)
+        check("tout est retenu au depart",
+              (barre.start, barre.end) == (0, 60000), f"{barre.start}-{barre.end}")
+
+        barre._start, barre._end = 10000, 20000
+        barre._grabbed = "start"
+        barre._end = 20000
+        check("un extrait garde ses bornes",
+              (barre.start, barre.end) == (10000, 20000), f"{barre.start}-{barre.end}")
+
+        # Les poignees ne doivent jamais se croiser : un extrait vide n'a pas de sens.
+        barre._start = 19950
+        barre._start = min(30000, max(0, barre._end - 100))
+        check("le debut ne depasse pas la fin", barre.start <= barre.end - 100,
+              f"{barre.start}-{barre.end}")
+
+        # La selection complete equivaut a « tout garder ».
+        sample_video = Path(tmp) / "clip.mp4"
+        sample_video.write_bytes(b"x" * 2048)
+        panel.select_file(sample_video)
+        check("le bouton Decouper apparait pour une video",
+              panel._trim_button.isVisible() or not panel.isVisible())
+        check("aucun extrait par defaut", panel._trim == (0, 0), str(panel._trim))
+
+        panel._trim = (2000, 9000)
+        panel._describe_pending(2048)
+        check("l'extrait choisi est rappele",
+              "0:02.0" in panel._file_label.text()
+              and "0:09.0" in panel._file_label.text(), panel._file_label.text())
+
+        emitted.clear()
+        panel._send()
+        check("les points de coupe accompagnent l'envoi",
+              emitted and emitted[0][4] == 2000 and emitted[0][5] == 9000, str(emitted))
+
+        panel._clear_selection()
+        check("abandonner oublie l'extrait", panel._trim == (0, 0), str(panel._trim))
+
+        panel.select_file(sample)
+        check("une image ne propose pas la decoupe",
+              not panel._trim_button.isVisible())
+        panel._clear_selection()
+
+        # L'overlay ne doit lire que l'extrait recu.
+        decoupe = payload("m13", "video", "http://x/clip.mp4", "Alice")
+        decoupe["media"]["trim_start"] = 3000
+        decoupe["media"]["trim_end"] = 8000
+        overlay.show_media(decoupe)
+        check("l'overlay retient les points de coupe",
+              (overlay._trim_start, overlay._trim_end) == (3000, 8000),
+              f"{overlay._trim_start}-{overlay._trim_end}")
+        overlay.show_media(payload("m14", "video", "http://x/clip.mp4", "Alice"))
+        check("sans decoupe, la lecture est entiere",
+              (overlay._trim_start, overlay._trim_end) == (0, 0),
+              f"{overlay._trim_start}-{overlay._trim_end}")
 
         # -- comparaison de versions -------------------------------------------
         from client.updates import Updater, asset_name, parse_version

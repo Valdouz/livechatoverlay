@@ -67,6 +67,8 @@ class Overlay(QWidget):
         self._private = False
         self._filename = ""
         self._animation = "fade"
+        self._trim_start = 0
+        self._trim_end = 0
         self._progress = 0.0
         self._block = QRect()
 
@@ -82,8 +84,7 @@ class Overlay(QWidget):
         self._player.setVideoSink(self._sink)
         self._player.setAudioOutput(self._audio)
         self._player.mediaStatusChanged.connect(self._on_media_status)
-        # La carte audio affiche l'avancement : il faut la repeindre en continu.
-        self._player.positionChanged.connect(lambda _: self.update(self._paint_region()))
+        self._player.positionChanged.connect(self._on_position)
         self._player.errorOccurred.connect(
             lambda _, message: log.warning("Lecture vidéo : %s", message)
         )
@@ -166,6 +167,8 @@ class Overlay(QWidget):
         self._media_id = media.get("id")
         self._kind = media.get("kind", "image")
         self._animation = media.get("animation", "fade")
+        self._trim_start = int(media.get("trim_start") or 0)
+        self._trim_end = int(media.get("trim_end") or 0)
         self._filename = media.get("filename", "")
         self._author = author.get("display_name", "")
         self._caption = (payload.get("caption") or "").strip()
@@ -208,6 +211,8 @@ class Overlay(QWidget):
         self._private = False
         self._filename = ""
         self._kind = ""
+        self._trim_start = 0
+        self._trim_end = 0
         self._avatar = None
         self._block = QRect()
         self.update()
@@ -375,7 +380,19 @@ class Overlay(QWidget):
         # Certains backends savent convertir sans mappage explicite.
         return frame.toImage()
 
+    def _on_position(self, position: int) -> None:
+        """Arrête à la fin de l'extrait, et repeint la carte audio au passage."""
+        if self._trim_end and position >= self._trim_end:
+            self._acknowledge()
+            self.clear()
+            return
+        self.update(self._paint_region())
+
     def _on_media_status(self, status) -> None:
+        # Un média chargé se place au début de l'extrait avant de se montrer.
+        if status == QMediaPlayer.MediaStatus.BufferedMedia and self._trim_start:
+            if self._player.position() < self._trim_start:
+                self._player.setPosition(self._trim_start)
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self._acknowledge()
             self.clear()

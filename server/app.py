@@ -376,6 +376,19 @@ async def upload_complete(request: web.Request) -> web.Response:
     if animation not in ANIMATIONS:
         animation = request.app["settings"]["default_animation"]
 
+    # Points de coupe, en millisecondes. Le fichier n'est pas retaillé : c'est la
+    # lecture qui s'y limite. Aucun réencodage, donc aucune perte ni attente.
+    def _ms(value) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    trim_start = _ms(body.get("trim_start"))
+    trim_end = _ms(body.get("trim_end"))
+    if trim_end and trim_end <= trim_start:
+        trim_start, trim_end = 0, 0
+
     media = {
         "id": meta["id"],
         "url": f"{request.app['config'].public_url}/media/{meta['id']}",
@@ -384,6 +397,8 @@ async def upload_complete(request: web.Request) -> web.Response:
         "filename": meta["filename"],
         "source": "upload",
         "animation": animation,
+        "trim_start": trim_start,
+        "trim_end": trim_end,
     }
     author = {
         "id": str(identity.user_id),

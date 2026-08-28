@@ -295,6 +295,20 @@ L'animation transforme le **bloc entier** autour de son centre : média, ligne a
 restent solidaires. Les médias venus de Discord n'ont pas d'expéditeur pour choisir — ils
 prennent `default_animation`, réglable dans le panneau admin.
 
+### Découpe avant envoi
+
+Le panneau propose de choisir un extrait des vidéos et des fichiers audio, avec aperçu,
+deux poignées et une tête de lecture qui boucle sur la sélection.
+
+**Le fichier n'est pas retaillé** : deux instants sont retenus et transmis avec le média
+(`trim_start`, `trim_end` en millisecondes), et la lecture s'y limite chez tout le monde.
+Aucun réencodage — donc rien à installer, aucune attente, aucune perte de qualité — au prix
+d'un fichier envoyé entier.
+
+Pour un extrait de dix secondes tiré d'une vidéo de téléphone, l'échange est bon. Pour
+tailler dans un fichier de plusieurs gigaoctets, il faudrait une vraie découpe côté
+expéditeur, avec ffmpeg embarqué. Non fait.
+
 ### Destinataire
 
 Par défaut un média part sur **tous les écrans**. Le panneau permet aussi de **viser une seule

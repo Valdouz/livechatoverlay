@@ -189,6 +189,10 @@ class Field(QWidget):
         layout.addWidget(widget)
 
 
+#: Extensions dont on peut extraire un passage : celles qui ont une durée.
+TRIMMABLE = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v",
+             ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
+
 FILE_FILTER = (
     "Médias (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm *.mov *.mkv "
     "*.mp3 *.wav *.m4a *.flac *.ogg *.opus *.aac);;"
@@ -240,7 +244,7 @@ class Panel(QWidget):
     settings_changed = Signal()
     login_requested = Signal()
     logout_requested = Signal()
-    upload_requested = Signal(Path, str, str, str)
+    upload_requested = Signal(Path, str, str, str, int, int)
     upload_cancelled = Signal()
     admin_action = Signal(str, object)
     update_requested = Signal()
@@ -253,6 +257,7 @@ class Panel(QWidget):
         self._online = False
         self._expanded = False
         self._pending: Path | None = None
+        self._trim = (0, 0)
         self._uploading = False
         self._may_upload = True
 
@@ -589,10 +594,15 @@ class Panel(QWidget):
         self._file_label = QLabel("")
         self._file_label.setObjectName("drop_title")
         self._file_label.setWordWrap(True)
+        self._trim_button = QPushButton("Découper")
+        self._trim_button.setObjectName("ghost_button")
+        self._trim_button.clicked.connect(self._open_editor)
+        self._trim_button.hide()
         change = QPushButton("Changer")
         change.setObjectName("ghost_button")
         change.clicked.connect(self._browse)
         file_row.addWidget(self._file_label, 1)
+        file_row.addWidget(self._trim_button)
         file_row.addWidget(change)
         layout.addLayout(file_row)
 
@@ -675,14 +685,40 @@ class Panel(QWidget):
             return
 
         self._pending = path
-        self._file_label.setText(f"{path.name}\n{human(size)}")
+        self._trim = (0, 0)
+        # Seuls les médias qui durent se découpent : une image n'a pas d'extrait.
+        self._trim_button.setVisible(path.suffix.lower() in TRIMMABLE)
+        self._describe_pending(size)
         self._send_stack.setCurrentIndex(1)
         self._tabs.setCurrentIndex(self._tabs.indexOf(self._send_tab))
         self._caption_field.setFocus()
         self._fit()
 
+    def _describe_pending(self, size: int) -> None:
+        label = f"{self._pending.name}\n{human(size)}"
+        start, end = self._trim
+        if end:
+            from .editor import clock
+            label += f"  ·  extrait {clock(start)} → {clock(end)}"
+        self._file_label.setText(label)
+
+    def _open_editor(self) -> None:
+        if self._pending is None:
+            return
+        from .editor import TrimDialog
+
+        dialog = TrimDialog(self._pending, self, *self._trim)
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            self._trim = dialog.selection()
+            try:
+                self._describe_pending(self._pending.stat().st_size)
+            except OSError:
+                pass
+            self._fit()
+
     def _clear_selection(self) -> None:
         self._pending = None
+        self._trim = (0, 0)
         self._caption_field.clear()
         self._send_stack.setCurrentIndex(0)
         self._fit()
@@ -695,6 +731,7 @@ class Panel(QWidget):
             self._caption_field.text().strip(),
             self._target_box.currentData() or "",
             self._animation_box.currentData() or "fade",
+            self._trim[0], self._trim[1],
         )
 
     def show_participants(self, people: list) -> None:
