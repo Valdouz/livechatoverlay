@@ -10,13 +10,14 @@ le conflit ne peut plus exister, et le contour du texte devient trois lignes de
 from __future__ import annotations
 
 import logging
+import os
 
 from PySide6.QtCore import (QBuffer, QByteArray, QEasingCurve, QIODevice, QPoint,
                             QPointF, QRect, QRectF, QSize, Qt, QTimer, QUrl, Signal)
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QMovie, QPainter,
                            QPainterPath, QPen, QPixmap)
 from PySide6.QtMultimedia import (QAudioOutput, QMediaDevices, QMediaPlayer,
-                                  QVideoSink)
+                                  QVideoFrame, QVideoSink)
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -55,6 +56,7 @@ class Overlay(QWidget):
         self._frame_image: QImage | None = None
         self._video_native = QSize()
         self._frame_dirty = False
+        self._null_frames = 0
         self._author = ""
         self._avatar: QPixmap | None = None
         self._caption = ""
@@ -293,9 +295,19 @@ class Overlay(QWidget):
             return
         if not frame.isValid():
             return
-        image = frame.toImage()
+
+        image = self._frame_to_image(frame)
         if image.isNull():
+            # Le son sortait mais l'écran restait vide, sans le moindre message.
+            self._null_frames += 1
+            if self._null_frames == 30:
+                log.warning(
+                    "Les images vidéo restent illisibles : le son passe mais rien "
+                    "ne s'affiche. Backend multimédia : %s",
+                    os.environ.get("QT_MEDIA_BACKEND", "par défaut"),
+                )
             return
+        self._null_frames = 0
 
         # Qt 6 applique lui-même la rotation portrait déclarée dans le conteneur :
         # la v1 devait lire les boîtes moov/trak/tkhd à la main pour y arriver.
@@ -314,6 +326,24 @@ class Overlay(QWidget):
         if first:
             self._relayout()
         self.update(self._paint_region())
+
+    @staticmethod
+    def _frame_to_image(frame) -> QImage:
+        """Convertit une trame en image, en la mappant d'abord.
+
+        Sur macOS les trames sortent de VideoToolbox et vivent sur le GPU :
+        `toImage()` seul renvoie une image nulle, et la vidéo se réduisait au son.
+        Les mapper en lecture donne accès aux pixels ; il faut alors copier avant
+        de démapper, sinon l'image pointerait sur de la mémoire libérée.
+        """
+        if frame.map(QVideoFrame.MapMode.ReadOnly):
+            try:
+                image = frame.toImage()
+                return image.copy() if not image.isNull() else image
+            finally:
+                frame.unmap()
+        # Certains backends savent convertir sans mappage explicite.
+        return frame.toImage()
 
     def _on_media_status(self, status) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia:

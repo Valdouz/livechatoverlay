@@ -202,17 +202,31 @@ class Updater(QObject):
     # -- installation ---------------------------------------------------------
 
     @staticmethod
-    def can_replace_itself() -> bool:
-        """L'application peut-elle se remplacer toute seule ?
+    def why_manual() -> str:
+        """Ce qui empêche l'installation automatique, chaîne vide si rien.
 
-        Uniquement compilée, sous Windows, et dans un dossier où l'on peut écrire.
-        Depuis les sources il n'y a rien à remplacer ; ailleurs, remplacer un
-        bundle ou un binaire en cours d'exécution demande des précautions que l'on
-        préfère laisser à l'utilisateur.
+        Renvoyer la raison plutôt qu'un simple booléen : quand la mise à jour ne
+        s'installe pas toute seule, savoir pourquoi évite de chercher longtemps.
         """
-        if not getattr(sys, "frozen", False) or not platform.IS_WINDOWS:
-            return False
-        return os.access(Path(sys.executable).parent, os.W_OK)
+        if not getattr(sys, "frozen", False):
+            return "lancé depuis les sources"
+        if not platform.IS_WINDOWS:
+            return "installation automatique réservée à Windows"
+
+        directory = Path(sys.executable).parent
+        # os.access ne regarde que l'attribut lecture seule sous Windows, jamais
+        # les ACL : le seul test fiable est d'essayer d'écrire pour de bon.
+        probe = directory / ".livechat-write-test"
+        try:
+            probe.touch()
+            probe.unlink()
+        except OSError as exc:
+            return f"dossier non modifiable ({exc.strerror or exc})"
+        return ""
+
+    @staticmethod
+    def can_replace_itself() -> bool:
+        return Updater.why_manual() == ""
 
     def install(self, downloaded: Path) -> bool:
         """Remplace l'exécutable et relance. Renvoie False s'il faut faire à la main.
@@ -221,7 +235,17 @@ class Updater(QObject):
         l'écraser depuis soi-même. On confie donc l'échange à un script qui attend
         la fin du processus, avec une sauvegarde restaurée si l'échange échoue.
         """
-        if not self.can_replace_itself():
+        reason = self.why_manual()
+        if reason:
+            log.info("Installation manuelle nécessaire : %s.", reason)
+            return False
+
+        # Un fichier tronqué remplacerait l'application par une coquille vide.
+        try:
+            if downloaded.stat().st_size < 4 * 1024 * 1024:
+                log.warning("Fichier téléchargé trop petit, échange annulé.")
+                return False
+        except OSError:
             return False
 
         target = Path(sys.executable)
@@ -259,14 +283,21 @@ class Updater(QObject):
         try:
             subprocess.Popen(
                 ["cmd", "/c", str(script), str(os.getpid())],
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                | getattr(subprocess, "DETACHED_PROCESS", 0),
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                # Compilée en mode fenêtré, l'application n'a aucun descripteur
+                # standard : sans ces trois-là, Popen échoue en essayant de les
+                # transmettre, et la mise à jour retombait silencieusement en manuel.
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 close_fds=True,
             )
         except OSError as exc:
             log.warning("Lancement du script de mise à jour impossible : %s", exc)
             script.unlink(missing_ok=True)
             return False
+
+        log.info("Script de mise à jour lancé, échange après la fermeture.")
         return True
 
 

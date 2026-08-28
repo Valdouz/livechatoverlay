@@ -529,6 +529,45 @@ def run() -> None:
         check("depuis les sources, pas de remplacement automatique",
               Updater.can_replace_itself() is False)
 
+        check("l'installation manuelle explique sa raison",
+              Updater.why_manual() == "lancé depuis les sources",
+              Updater.why_manual())
+
+        # -- conversion des trames video ----------------------------------------
+        # Sur macOS les trames vivent sur le GPU : sans mappage, toImage() renvoie
+        # une image nulle et la video se reduit au son.
+        journal = []
+
+        class TrameMappable:
+            def map(self, mode):
+                journal.append("map")
+                return True
+
+            def unmap(self):
+                journal.append("unmap")
+
+            def toImage(self):
+                journal.append("toImage")
+                img = QImage(4, 4, QImage.Format_ARGB32)
+                img.fill(Qt.red)
+                return img
+
+        result = Overlay._frame_to_image(TrameMappable())
+        check("la trame est mappee avant conversion", journal[0] == "map", str(journal))
+        check("elle est demappee ensuite", "unmap" in journal, str(journal))
+        check("l'image obtenue est exploitable",
+              not result.isNull() and result.width() == 4, str(result))
+
+        class TrameNonMappable(TrameMappable):
+            def map(self, mode):
+                journal.append("map-refuse")
+                return False
+
+        journal.clear()
+        result = Overlay._frame_to_image(TrameNonMappable())
+        check("un refus de mappage tente quand meme la conversion",
+              journal == ["map-refuse", "toImage"] and not result.isNull(), str(journal))
+
         # -- bandeau de mise a jour --------------------------------------------
         check("le bandeau est cache par defaut", not panel._update_banner.isVisible())
         panel.show_update("9.9.9")

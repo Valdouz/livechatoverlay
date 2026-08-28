@@ -360,12 +360,17 @@ class LiveChatClient:
         if self._updater.install(path):
             self._panel.update_finished("Redémarrage…")
             log.info("Mise à jour installée, relance en cours.")
-            self._quit()
+            # Laisser le script démarrer et voir un processus encore vivant :
+            # il attend notre fermeture, il ne doit pas la manquer.
+            QTimer.singleShot(600, self._quit)
             return
 
+        reason = self._updater.why_manual()
         reveal(path)
+        detail = f" ({reason})" if reason else ""
         self._panel.update_finished(
-            f"Téléchargé dans {path.parent.name}. Remplacez l'application par ce fichier."
+            f"Téléchargé dans {path.parent.name}{detail}. "
+            f"Fermez LiveChat et remplacez l'application par ce fichier."
         )
 
     # -- divers ---------------------------------------------------------------
