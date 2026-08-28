@@ -93,6 +93,13 @@ def run() -> None:
               bool(overlay.windowFlags() & Qt.WindowTransparentForInput))
         check("l'overlay ne prend pas le focus",
               bool(overlay.windowFlags() & Qt.WindowDoesNotAcceptFocus))
+        # Sans cet attribut macOS masque la fenetre des que l'app perd le focus :
+        # le son continuait sans l'image.
+        check("l'overlay reste visible hors premier plan sur macOS",
+              overlay.testAttribute(Qt.WA_MacAlwaysShowToolWindow))
+        check("les reglages de fenetre macOS ne s'appliquent pas ailleurs",
+              platform.configure_mac_window(overlay) is platform.IS_MAC
+              or platform.IS_MAC)
 
         overlay.show_media(payload("m1", "image", "http://x/y.png", "PotatoZY", "Allez terra"))
         overlay._on_image(png_bytes(800, 450))

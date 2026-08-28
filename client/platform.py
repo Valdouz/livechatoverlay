@@ -60,8 +60,9 @@ def make_click_through(window) -> bool:
     focus à ce qui tourne devant.
     """
     if not IS_WINDOWS:
-        # X11 et macOS sont couverts par le drapeau Qt posé à la construction.
+        # X11 est couvert par le drapeau Qt posé à la construction.
         if IS_MAC:
+            configure_mac_window(window)
             return _mac_ignore_mouse(window)
         return True
 
@@ -90,22 +91,74 @@ def make_click_through(window) -> bool:
 def _mac_ignore_mouse(window) -> bool:
     try:
         import ctypes
-        import ctypes.util
 
-        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
-        objc.sel_registerName.restype = ctypes.c_void_p
-        objc.objc_msgSend.restype = ctypes.c_void_p
-        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        ns_window = objc.objc_msgSend(
-            ctypes.c_void_p(int(window.winId())), objc.sel_registerName(b"window")
-        )
-        send = objc.objc_msgSend
-        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
-        send.restype = None
-        send(ns_window, objc.sel_registerName(b"setIgnoresMouseEvents:"), True)
+        objc, ns_window = _mac_window(window)
+        if ns_window is None:
+            return False
+        set_bool = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.c_bool)(("objc_msgSend", objc))
+        set_bool(ns_window, objc.sel_registerName(b"setIgnoresMouseEvents:"), True)
         return True
     except Exception as exc:
         log.warning("Clic-traversant indisponible : %s", exc)
+        return False
+
+
+#: Comportements de fenêtre macOS, tirés de NSWindow.h.
+NS_JOIN_ALL_SPACES = 1 << 0        # présente sur tous les bureaux
+NS_FULLSCREEN_AUXILIARY = 1 << 8   # tolérée par-dessus une app en plein écran
+NS_STATUS_WINDOW_LEVEL = 25        # au-dessus des fenêtres ordinaires
+
+
+def _mac_window(window):
+    """(runtime objc, NSWindow) pour un widget Qt, (objc, None) si introuvable.
+
+    Chaque appel se fait par un pointeur de fonction dédié à sa signature :
+    `objc_msgSend` est variadique, et réutiliser le même objet ctypes en
+    changeant ses `argtypes` d'un appel à l'autre finit par le corrompre.
+    """
+    import ctypes
+    import ctypes.util
+
+    objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+    objc.sel_registerName.restype = ctypes.c_void_p
+    objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+    get_window = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p,
+                                  ctypes.c_void_p)(("objc_msgSend", objc))
+    view = ctypes.c_void_p(int(window.winId()))
+    ns_window = get_window(view, objc.sel_registerName(b"window"))
+    return objc, (ctypes.c_void_p(ns_window) if ns_window else None)
+
+
+def configure_mac_window(window) -> bool:
+    """Rend l'overlay visible partout sur macOS, y compris hors premier plan.
+
+    Sans ces réglages la fenêtre disparaît en changeant de bureau et se range
+    derrière une application en plein écran. Le masquage à la désactivation, lui,
+    se règle côté Qt avec WA_MacAlwaysShowToolWindow.
+    """
+    if not IS_MAC:
+        return False
+    try:
+        import ctypes
+
+        objc, ns_window = _mac_window(window)
+        if ns_window is None:
+            return False
+
+        set_ulong = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p,
+                                     ctypes.c_ulong)(("objc_msgSend", objc))
+        set_long = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.c_long)(("objc_msgSend", objc))
+
+        set_ulong(ns_window, objc.sel_registerName(b"setCollectionBehavior:"),
+                  NS_JOIN_ALL_SPACES | NS_FULLSCREEN_AUXILIARY)
+        set_long(ns_window, objc.sel_registerName(b"setLevel:"),
+                 NS_STATUS_WINDOW_LEVEL)
+        return True
+    except Exception as exc:
+        log.warning("Réglages de fenêtre macOS indisponibles : %s", exc)
         return False
 
 

@@ -50,6 +50,10 @@ class Overlay(QWidget):
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        # Sur macOS une fenêtre Qt.Tool devient un NSPanel, que le système masque
+        # dès que l'application perd le premier plan : le son continuait sans
+        # l'image. Cet attribut demande à Qt de la garder visible.
+        self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
 
         # -- média courant ----------------------------------------------------
         self._media_id: str | None = None
