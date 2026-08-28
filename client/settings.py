@@ -55,6 +55,10 @@ DEFAULTS: dict[str, Any] = {
     # Son
     "volume": 80,
     "muted": False,
+    # Nom du périphérique de sortie. Vide = celui par défaut du système.
+    # On retient le nom plutôt que l'identifiant : celui-ci change au gré des
+    # pilotes et des ports USB, le nom reste reconnaissable d'une session à l'autre.
+    "audio_device": "",
     # Comportement
     "avoid_fullscreen": True,   # basculer d'écran si un jeu occupe celui-ci
     "panel_expanded": False,    # petit panneau flottant, ou vraie fenêtre

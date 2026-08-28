@@ -462,6 +462,49 @@ def run() -> None:
                    and tray.pixelColor(x, y).red() < 140)
         check("l'icone de notification aussi", ring > 100, f"{ring} pixels verts")
 
+        # -- sortie audio -------------------------------------------------------
+        from PySide6.QtMultimedia import QMediaDevices
+
+        check("par defaut, la sortie du systeme",
+              settings["audio_device"] == "" and panel._audio_box.currentData() == "",
+              repr(panel._audio_box.currentData()))
+        check("la premiere entree annonce le peripherique par defaut",
+              "Par défaut du système" in panel._audio_box.itemText(0),
+              panel._audio_box.itemText(0))
+
+        available = [d.description() for d in QMediaDevices.audioOutputs()]
+        listed = [panel._audio_box.itemData(i) for i in range(panel._audio_box.count())]
+        check("toutes les sorties sont proposees",
+              all(name in listed for name in available),
+              f"{len(available)} attendues, {len(listed) - 1} listees")
+
+        if available:
+            panel._audio_box.setCurrentIndex(listed.index(available[0]))
+            check("choisir une sortie l'enregistre",
+                  settings["audio_device"] == available[0], settings["audio_device"])
+            overlay.apply_volume()
+            check("l'overlay bascule sur la sortie choisie",
+                  overlay._audio.device().description() == available[0],
+                  overlay._audio.device().description())
+
+        # Un peripherique disparu ne doit ni etre perdu, ni rendre le son muet.
+        settings.set("audio_device", "Casque qui n'existe pas")
+        panel.refresh_audio_devices()
+        check("une sortie absente reste selectionnee",
+              panel._audio_box.currentData() == "Casque qui n'existe pas",
+              repr(panel._audio_box.currentData()))
+        check("elle est signalee comme absente",
+              "(absent)" in panel._audio_box.currentText(), panel._audio_box.currentText())
+        overlay.apply_volume()
+        check("le son retombe sur la sortie du systeme",
+              overlay._audio.device().description()
+              == QMediaDevices.defaultAudioOutput().description(),
+              overlay._audio.device().description())
+
+        settings.set("audio_device", "")
+        panel.refresh_audio_devices()
+        overlay.apply_volume()
+
         # -- comparaison de versions -------------------------------------------
         from client.updates import Updater, asset_name, parse_version
 

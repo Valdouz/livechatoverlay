@@ -15,7 +15,8 @@ from PySide6.QtCore import (QBuffer, QByteArray, QEasingCurve, QIODevice, QPoint
                             QPointF, QRect, QRectF, QSize, Qt, QTimer, QUrl, Signal)
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QMovie, QPainter,
                            QPainterPath, QPen, QPixmap)
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
+from PySide6.QtMultimedia import (QAudioOutput, QMediaDevices, QMediaPlayer,
+                                  QVideoSink)
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -67,6 +68,10 @@ class Overlay(QWidget):
         self._sink = QVideoSink(self)
         self._sink.videoFrameChanged.connect(self._on_frame)
         self._audio = QAudioOutput(self)
+        # Un casque débranché ou un périphérique virtuel qui apparaît change la
+        # liste : il faut relire le choix, sinon le son part dans le vide.
+        self._media_devices = QMediaDevices(self)
+        self._media_devices.audioOutputsChanged.connect(self.apply_volume)
         self._player = QMediaPlayer(self)
         self._player.setVideoSink(self._sink)
         self._player.setAudioOutput(self._audio)
@@ -326,8 +331,30 @@ class Overlay(QWidget):
     # -- son ------------------------------------------------------------------
 
     def apply_volume(self) -> None:
+        self._apply_audio_device()
         self._audio.setMuted(bool(self._settings["muted"]))
         self._audio.setVolume(max(0, min(100, int(self._settings["volume"]))) / 100.0)
+
+    def _apply_audio_device(self) -> None:
+        """Envoie le son sur le périphérique choisi, celui du système par défaut.
+
+        Si le périphérique retenu a disparu — casque débranché, carte virtuelle
+        désinstallée — on retombe sur celui du système plutôt que de laisser la
+        lecture muette sans explication.
+        """
+        wanted = (self._settings["audio_device"] or "").strip()
+        if not wanted:
+            self._audio.setDevice(QMediaDevices.defaultAudioOutput())
+            return
+
+        for device in QMediaDevices.audioOutputs():
+            if device.description() == wanted:
+                if self._audio.device().description() != wanted:
+                    self._audio.setDevice(device)
+                return
+
+        log.info("Sortie audio « %s » introuvable, retour à celle du système.", wanted)
+        self._audio.setDevice(QMediaDevices.defaultAudioOutput())
 
     # -- fondu ----------------------------------------------------------------
 

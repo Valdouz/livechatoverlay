@@ -160,6 +160,11 @@ class LiveChatClient:
         QGuiApplication.instance().screenAdded.connect(self._on_screens_changed)
         QGuiApplication.instance().screenRemoved.connect(self._on_screens_changed)
 
+        # Brancher un casque doit faire apparaître le périphérique dans la liste.
+        from PySide6.QtMultimedia import QMediaDevices
+        self._media_devices = QMediaDevices(self._app)
+        self._media_devices.audioOutputsChanged.connect(self._on_audio_devices_changed)
+
         self._admin_timer = QTimer()
         self._admin_timer.timeout.connect(self._refresh_admin)
 
@@ -368,6 +373,10 @@ class LiveChatClient:
     def _on_screens_changed(self, _=None) -> None:
         self._panel.refresh_screens()
         self._overlay.place_on_screen()
+
+    def _on_audio_devices_changed(self) -> None:
+        self._panel.refresh_audio_devices()
+        self._overlay.apply_volume()
 
     def _quit(self) -> None:
         self._api.stop()

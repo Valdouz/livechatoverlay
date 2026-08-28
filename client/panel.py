@@ -162,6 +162,21 @@ class Slider(QWidget):
         return self.slider.value()
 
 
+def combo() -> QComboBox:
+    """Une liste déroulante qui ne dicte pas la largeur de la fenêtre.
+
+    Par défaut un QComboBox réclame la largeur de sa plus longue entrée. Un nom
+    de périphérique audio ou une famille de police à rallonge élargissait donc
+    toute la colonne au-delà du panneau, et les valeurs des curseurs se
+    retrouvaient hors champ, invisibles derrière un défilement désactivé.
+    """
+    box = QComboBox()
+    box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+    box.setMinimumContentsLength(12)
+    box.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+    return box
+
+
 class Field(QWidget):
     """Un libellé au-dessus de son contrôle, plutôt qu'une colonne d'étiquettes."""
 
@@ -582,14 +597,14 @@ class Panel(QWidget):
         layout.addWidget(self._caption_field)
 
         # Par défaut le média part sur tous les écrans ; on peut viser une personne.
-        self._target_box = QComboBox()
+        self._target_box = combo()
         self._target_box.addItem("Tout le monde", "")
         self._target_names: dict[str, str] = {}
         layout.addWidget(Field("Destinataire", self._target_box))
 
         # L'animation est choisie par l'expéditeur : c'est son envoi, c'est son
         # entrée en scène. Les destinataires ne la règlent pas.
-        self._animation_box = QComboBox()
+        self._animation_box = combo()
         for key, label in theme.ANIMATIONS.items():
             self._animation_box.addItem(label, key)
         index = self._animation_box.findData(self._settings["animation"])
@@ -732,14 +747,14 @@ class Panel(QWidget):
         page, layout = _tab()
 
         layout.addWidget(section("Où"))
-        self._screen_box = QComboBox()
+        self._screen_box = combo()
         self._screen_box.currentIndexChanged.connect(
             lambda: self._change("screen_name", self._screen_box.currentData())
         )
         layout.addWidget(Field("Écran", self._screen_box))
         self.refresh_screens()
 
-        self._corner_box = QComboBox()
+        self._corner_box = combo()
         for key, label in CORNERS.items():
             self._corner_box.addItem(label, key)
         index = self._corner_box.findData(self._settings["corner"])
@@ -763,7 +778,7 @@ class Panel(QWidget):
 
         layout.addWidget(separator())
         layout.addWidget(section("Texte"))
-        self._font_box = QComboBox()
+        self._font_box = combo()
         self._font_box.addItem(f"Embarquée — {fonts.embedded_family()}", "")
         for family in QFontDatabase.families():
             self._font_box.addItem(family, family)
@@ -780,7 +795,7 @@ class Panel(QWidget):
         self._caption_size = self._slider(layout, "Taille de la légende", 10, 60,
                                           self._settings["caption_size"], "px", "caption_size")
 
-        self._author_box = QComboBox()
+        self._author_box = combo()
         for key, label in AUTHOR_POSITIONS.items():
             self._author_box.addItem(label, key)
         index = self._author_box.findData(self._settings["author_position"])
@@ -790,7 +805,7 @@ class Panel(QWidget):
         )
         layout.addWidget(Field("Affichage de l'auteur", self._author_box))
 
-        self._side_box = QComboBox()
+        self._side_box = combo()
         for key, label in AUTHOR_SIDES.items():
             self._side_box.addItem(label, key)
         index = self._side_box.findData(self._settings["author_side"])
@@ -802,6 +817,14 @@ class Panel(QWidget):
 
         layout.addWidget(separator())
         layout.addWidget(section("Son et confort"))
+
+        self._audio_box = combo()
+        self._audio_box.currentIndexChanged.connect(
+            lambda: self._change("audio_device", self._audio_box.currentData())
+        )
+        layout.addWidget(Field("Sortie audio", self._audio_box))
+        self.refresh_audio_devices()
+
         self._volume = self._slider(layout, "Volume", 0, 100,
                                     self._settings["volume"], "%", "volume")
         self._mute = QCheckBox("Couper le son")
@@ -821,6 +844,31 @@ class Panel(QWidget):
         widget.changed.connect(lambda v: self._change(key, v))
         layout.addWidget(widget)
         return widget
+
+    def refresh_audio_devices(self) -> None:
+        """Recharge la liste sans perdre le choix, même si l'appareil est absent.
+
+        Un casque débranché doit rester sélectionné : il reviendra au prochain
+        branchement, et le remplacer d'office ferait perdre le réglage.
+        """
+        from PySide6.QtMultimedia import QMediaDevices
+
+        chosen = self._settings["audio_device"]
+        self._audio_box.blockSignals(True)
+        self._audio_box.clear()
+        default = QMediaDevices.defaultAudioOutput()
+        self._audio_box.addItem(f"Par défaut du système — {default.description()}", "")
+
+        found = False
+        for device in QMediaDevices.audioOutputs():
+            self._audio_box.addItem(device.description(), device.description())
+            found = found or device.description() == chosen
+
+        if chosen and not found:
+            self._audio_box.addItem(f"{chosen} (absent)", chosen)
+        index = self._audio_box.findData(chosen)
+        self._audio_box.setCurrentIndex(index if index >= 0 else 0)
+        self._audio_box.blockSignals(False)
 
     def refresh_screens(self) -> None:
         current = self._settings["screen_name"]
