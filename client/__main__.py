@@ -26,7 +26,7 @@ from . import fonts, theme  # noqa: E402
 from .api import Api  # noqa: E402
 from .overlay import Overlay  # noqa: E402
 from .panel import Panel  # noqa: E402
-from .settings import ClientSettings  # noqa: E402
+from .settings import ClientSettings, normalise_server_url  # noqa: E402
 from .updates import Updater, reveal  # noqa: E402
 from . import __version__  # noqa: E402
 
@@ -98,12 +98,8 @@ def preset_server() -> str:
     return os.environ.get("LIVECHAT_SERVER", "").strip()
 
 
-def normalise(url: str) -> str:
-    url = url.strip().rstrip("/")
-    if url and not url.startswith(("http://", "https://")):
-        # Une adresse collée depuis la page d'accueil peut avoir perdu son schéma.
-        url = f"https://{url}"
-    return url
+#: Même normalisation que celle du panneau : une seule règle, un seul endroit.
+normalise = normalise_server_url
 
 
 def make_icon() -> QIcon:
@@ -204,6 +200,7 @@ class LiveChatClient:
         api.admin_error.connect(lambda message: panel.notify(message, error=True))
 
         overlay.acknowledged.connect(api.acknowledge)
+        overlay.media_failed.connect(lambda message: panel.notify(message, error=True))
 
         panel.login_requested.connect(api.login)
         panel.logout_requested.connect(self._on_logout)

@@ -20,6 +20,7 @@ class Client:
     id: str
     ws: web.WebSocketResponse
     identity: Identity
+    token: str = ""
     connected_at: float = field(default_factory=time.time)
 
     def public(self) -> dict:
@@ -38,8 +39,30 @@ class Hub:
 
     # -- connexions -----------------------------------------------------------
 
-    def add(self, ws: web.WebSocketResponse, identity: Identity) -> Client:
-        client = Client(id=secrets.token_urlsafe(12), ws=ws, identity=identity)
+    async def add(self, ws: web.WebSocketResponse, identity: Identity,
+                  token: str = "") -> Client:
+        """Enregistre une connexion, en écartant les fantômes du même client.
+
+        Une connexion coupée sans au revoir — coupure réseau, tunnel qui recycle,
+        machine en veille — reste ouverte côté serveur jusqu'à ce que le battement
+        de cœur la déclare morte. Pendant ce temps elle compte comme un écran
+        servi : la diffusion s'y écrit sans erreur, et personne ne voit rien.
+
+        Un même jeton de session ne peut être vivant qu'une fois. Deux machines
+        distinctes se connectent chacune avec le sien, elles ne se gênent pas.
+        """
+        if token:
+            for stale in [c for c in self._clients.values() if c.token == token]:
+                log.info("Connexion fantôme écartée pour %s.", identity.display_name)
+                self._clients.pop(stale.id, None)
+                self._store.forget_client(stale.id)
+                try:
+                    await stale.ws.close(code=1012, message=b"remplacee")
+                except Exception:
+                    pass
+
+        client = Client(id=secrets.token_urlsafe(12), ws=ws,
+                        identity=identity, token=token)
         self._clients[client.id] = client
         log.info("Connecté : %s (%d au total)", identity.display_name, len(self._clients))
         return client

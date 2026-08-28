@@ -31,6 +31,10 @@ FULLSCREEN_CHECK_MS = 3000
 
 class Overlay(QWidget):
     acknowledged = Signal(str)
+    #: Un média qui ne se charge pas doit se dire. Sans ce signal, l'écran
+    #: restait vide sans que personne ne sache pourquoi, chez une partie du
+    #: groupe seulement — le genre de panne impossible à diagnostiquer.
+    media_failed = Signal(str)
 
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -170,7 +174,7 @@ class Overlay(QWidget):
 
         avatar_url = author.get("avatar_url", "")
         if avatar_url:
-            self._fetch(avatar_url, self._on_avatar)
+            self._fetch(avatar_url, self._on_avatar, what="avatar")
 
         url = media.get("url", "")
         if self._kind in ("video", "audio"):
@@ -224,14 +228,24 @@ class Overlay(QWidget):
             return f"{url}{joiner}token={token}"
         return url
 
-    def _fetch(self, url: str, callback) -> None:
+    def _fetch(self, url: str, callback, what: str = "média") -> None:
         reply = self._nam.get(QNetworkRequest(QUrl(self._authorized(url))))
 
         def done():
-            data = bytes(reply.readAll()) if reply.error() == reply.NetworkError.NoError else b""
+            failed = reply.error() != reply.NetworkError.NoError
+            status = reply.attribute(QNetworkRequest.HttpStatusCodeAttribute)
+            reason = reply.errorString()
+            data = b"" if failed else bytes(reply.readAll())
             reply.deleteLater()
+
             if data:
                 callback(data)
+                return
+
+            log.warning("Chargement du %s impossible (HTTP %s) : %s — %s",
+                        what, status, reason, url)
+            if what == "média":
+                self.media_failed.emit(self.failure_message(status))
 
         reply.finished.connect(done)
 
@@ -326,6 +340,22 @@ class Overlay(QWidget):
         if first:
             self._relayout()
         self.update(self._paint_region())
+
+    @staticmethod
+    def failure_message(status) -> str:
+        """Traduit un échec de chargement en phrase utile.
+
+        Chaque cas oriente vers une cause différente : dire « ça n'a pas marché »
+        ne permettrait pas de savoir s'il faut se reconnecter, attendre, ou
+        prévenir l'hébergeur.
+        """
+        if status == 401 or status == 403:
+            return "Média refusé : session expirée, reconnectez-vous."
+        if status == 404:
+            return "Média introuvable : il a peut-être déjà été supprimé."
+        if status is None:
+            return "Média inaccessible : serveur injoignable."
+        return f"Média non chargé (erreur {status})."
 
     @staticmethod
     def _frame_to_image(frame) -> QImage:

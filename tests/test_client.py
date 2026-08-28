@@ -462,6 +462,37 @@ def run() -> None:
                    and tray.pixelColor(x, y).red() < 140)
         check("l'icone de notification aussi", ring > 100, f"{ring} pixels verts")
 
+        # -- une adresse mal saisie ne doit pas casser le chargement -------------
+        from client.settings import normalise_server_url as norm
+
+        for raw, want in (("https://exemple.fr/", "https://exemple.fr"),
+                          ("exemple.fr", "https://exemple.fr"),
+                          ("  https://exemple.fr  ", "https://exemple.fr"),
+                          ("http://192.168.1.4:3000", "http://192.168.1.4:3000"),
+                          ("", "")):
+            check(f"adresse {raw!r} normalisee", norm(raw) == want, norm(raw))
+
+        # C'est ce qui decide si le jeton accompagne la requete : une barre finale
+        # ou un schema oublie et le media ne se chargeait que chez certains.
+        settings.set("server_url", norm("https://livechat.test/"))
+        settings.set("token", "SECRET")
+        check("le jeton suit malgre une barre oblique finale",
+              overlay._authorized("https://livechat.test/media/abc").endswith("?token=SECRET"),
+              overlay._authorized("https://livechat.test/media/abc"))
+
+        # -- un echec de chargement doit se signaler ----------------------------
+        for status, attendu in ((401, "reconnectez"), (403, "reconnectez"),
+                                (404, "supprimé"), (None, "injoignable"),
+                                (500, "erreur 500")):
+            message = Overlay.failure_message(status)
+            check(f"echec {status} explique la cause",
+                  attendu in message, f"{status} -> {message}")
+
+        signale = []
+        overlay.media_failed.connect(signale.append)
+        overlay.media_failed.emit(Overlay.failure_message(404))
+        check("l'echec remonte bien au panneau", len(signale) == 1, str(signale))
+
         # -- sortie audio -------------------------------------------------------
         from PySide6.QtMultimedia import QMediaDevices
 

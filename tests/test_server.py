@@ -210,12 +210,13 @@ async def run() -> None:
         hub, store_ = app["hub"], app["store"]
 
         class FakeWS:
-            def __init__(self): self.sent = []
+            def __init__(self): self.sent = []; self.closed = False
             async def send_str(self, text): self.sent.append(text)
+            async def close(self, code=1000, message=b""): self.closed = True
 
         ws_member, ws_admin = FakeWS(), FakeWS()
-        c_member = hub.add(ws_member, identity(MEMBER_ID, "Membre"))
-        c_admin = hub.add(ws_admin, identity(ADMIN_ID, "Admin"))
+        c_member = await hub.add(ws_member, identity(MEMBER_ID, "Membre"), token="tok-membre")
+        c_admin = await hub.add(ws_admin, identity(ADMIN_ID, "Admin"), token="tok-admin")
 
         response = await client.get("/participants", headers=auth(member))
         listed = await response.json()
@@ -263,7 +264,36 @@ async def run() -> None:
         check("destinataire invalide refuse", response.status in (400, 404),
               f"recu {response.status}")
 
-        hub.remove(c_member)
+        # -- une connexion fantome ne doit pas passer pour un ecran servi -------
+        # Reproduit ce que montrent les journaux : une coupure sans au revoir
+        # laisse une socket ouverte, comptee comme livree, que personne ne lit.
+        avant = len(hub.clients())
+        ws_fantome = FakeWS()
+        c_fantome = await hub.add(ws_fantome, identity(MEMBER_ID, "Membre"),
+                                  token="tok-membre")
+        check("se reconnecter avec le meme jeton n'ajoute pas d'ecran",
+              len(hub.clients()) == avant, f"{avant} -> {len(hub.clients())}")
+        check("l'ancienne connexion est fermee", ws_fantome is not ws_member
+              and ws_member.closed, "la socket fantome est restee ouverte")
+
+        recu_avant = len(ws_member.sent)
+        sent = await app["broadcast_media"]({"id": None, "kind": "image", "url": "u"},
+                                            {"display_name": "Test"}, "")
+        check("la diffusion ne compte plus le fantome", sent == avant, str(sent))
+        check("le fantome ne recoit plus rien", len(ws_member.sent) == recu_avant,
+              str(len(ws_member.sent)))
+        check("la connexion vivante recoit bien", len(ws_fantome.sent) == 1,
+              str(len(ws_fantome.sent)))
+
+        # Deux machines distinctes ont chacune leur jeton : elles coexistent.
+        ws_seconde = FakeWS()
+        c_seconde = await hub.add(ws_seconde, identity(MEMBER_ID, "Membre"),
+                                  token="tok-membre-portable")
+        check("deux jetons differents cohabitent",
+              len(hub.clients()) == avant + 1, str(len(hub.clients())))
+        hub.remove(c_seconde)
+
+        hub.remove(c_fantome)
         hub.remove(c_admin)
 
         # -- service du media, avec Range ------------------------------------

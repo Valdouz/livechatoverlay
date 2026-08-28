@@ -263,9 +263,11 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
     if session is None or authorizer.is_banned(session.identity):
         raise web.HTTPUnauthorized(reason="Authentification requise")
 
-    ws = web.WebSocketResponse(heartbeat=30)
+    # Battement rapproché : un pair mort est repéré en une dizaine de secondes
+    # au lieu d'une minute, pendant laquelle il passait pour un écran servi.
+    ws = web.WebSocketResponse(heartbeat=10, receive_timeout=40)
     await ws.prepare(request)
-    client = hub.add(ws, session.identity)
+    client = await hub.add(ws, session.identity, token=session.token)
     await hub.send_to(client, {"type": "welcome", "you": authorizer.describe(session.identity)})
 
     try:
@@ -409,8 +411,12 @@ async def upload_complete(request: web.Request) -> web.Response:
 @requires_auth
 async def serve_media(request: web.Request) -> web.StreamResponse:
     store = request.app["store"]
-    found = store.resolve(request.match_info["media_id"])
+    media_id = request.match_info["media_id"]
+    found = store.resolve(media_id)
     if found is None:
+        # Journalisé : « je suis le seul à le voir » se diagnostique ici.
+        log.info("Média %s réclamé par %s mais introuvable.",
+                 media_id, request["identity"].display_name)
         raise web.HTTPNotFound(reason="Média introuvable ou déjà supprimé")
     path, meta = found
     # FileResponse gère les requêtes Range : les overlays lisent en streaming au lieu

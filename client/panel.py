@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                                QWidget)
 
 from . import fonts, platform, theme
-from .settings import AUTHOR_POSITIONS, AUTHOR_SIDES, CORNERS
+from .settings import AUTHOR_POSITIONS, AUTHOR_SIDES, CORNERS, normalise_server_url
 
 log = logging.getLogger(__name__)
 
@@ -468,7 +468,7 @@ class Panel(QWidget):
         self._server_field.setAlignment(Qt.AlignCenter)
         self._server_field.returnPressed.connect(self._on_login_clicked)
         self._server_field.editingFinished.connect(
-            lambda: self._settings.set("server_url", self._server_field.text().strip())
+            lambda: self._store_server_url()
         )
         layout.addWidget(Field("Adresse du serveur", self._server_field))
         layout.addWidget(hint("Tapez /livechat dans votre serveur Discord : le bot vous "
@@ -489,11 +489,18 @@ class Panel(QWidget):
         return page
 
     def _on_login_clicked(self) -> None:
-        self._settings.set("server_url", self._server_field.text().strip())
+        self._store_server_url()
         self._login_button.setEnabled(False)
         self._login_button.setText("En attente du navigateur…")
         QTimer.singleShot(20000, self._reset_login_button)
         self.login_requested.emit()
+
+    def _store_server_url(self) -> None:
+        cleaned = normalise_server_url(self._server_field.text())
+        self._settings.set("server_url", cleaned)
+        # Montrer la forme retenue : sinon on croit avoir saisi autre chose.
+        if cleaned != self._server_field.text():
+            self._server_field.setText(cleaned)
 
     def _reset_login_button(self) -> None:
         self._login_button.setEnabled(True)

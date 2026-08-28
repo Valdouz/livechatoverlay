@@ -35,6 +35,20 @@ AUTHOR_SIDES = {
     "right": "À droite",
 }
 
+def normalise_server_url(url: str) -> str:
+    """Met une adresse saisie sous une forme comparable.
+
+    Le serveur fabrique les URL de médias à partir de son adresse publique, et le
+    client n'y joint son jeton que si l'URL commence par l'adresse enregistrée.
+    Une barre oblique finale ou un schéma oublié suffisaient donc à ce que le
+    média ne se charge que chez certains — sans le moindre message.
+    """
+    url = (url or "").strip().rstrip("/")
+    if url and not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+    return url
+
+
 DEFAULTS: dict[str, Any] = {
     "server_url": "",
     "token": "",
