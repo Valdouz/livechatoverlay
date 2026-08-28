@@ -631,6 +631,27 @@ def run() -> None:
               (overlay._trim_start, overlay._trim_end) == (0, 0),
               f"{overlay._trim_start}-{overlay._trim_end}")
 
+        # -- repli en decodage logiciel -----------------------------------------
+        from client.__main__ import (SOFTWARE_DECODING_MARKER,
+                                     set_software_decoding,
+                                     software_decoding_enabled)
+
+        etait = software_decoding_enabled()
+        set_software_decoding(True)
+        check("le marqueur est pose", software_decoding_enabled()
+              and SOFTWARE_DECODING_MARKER.exists(), str(SOFTWARE_DECODING_MARKER))
+        check("il est lisible sans Qt",
+              SOFTWARE_DECODING_MARKER.read_text(encoding="utf-8").strip() == "1")
+        set_software_decoding(False)
+        check("il se retire", not software_decoding_enabled())
+        set_software_decoding(etait)
+
+        panel._software.setChecked(True)
+        check("la case coche pose le marqueur", software_decoding_enabled())
+        panel._software.setChecked(False)
+        check("la decocher le retire", not software_decoding_enabled())
+        set_software_decoding(etait)
+
         # -- comparaison de versions -------------------------------------------
         from client.updates import Updater, asset_name, parse_version
 

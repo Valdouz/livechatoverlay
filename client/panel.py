@@ -511,6 +511,12 @@ class Panel(QWidget):
         self._login_button.setEnabled(True)
         self._login_button.setText("Se connecter avec Discord")
 
+    def _on_software_decoding(self, enabled: bool) -> None:
+        from .__main__ import set_software_decoding
+
+        set_software_decoding(enabled)
+        self.notify("Redémarrez LiveChat pour appliquer ce changement.")
+
     def _on_autostart(self, enabled: bool) -> None:
         if not platform.set_autostart(enabled):
             self.notify("Impossible de modifier le démarrage automatique.", error=True)
@@ -880,6 +886,17 @@ class Panel(QWidget):
         self._avoid.setChecked(bool(self._settings["avoid_fullscreen"]))
         self._avoid.toggled.connect(lambda v: self._change("avoid_fullscreen", v))
         layout.addWidget(self._avoid)
+
+        # Recours quand le son passe mais que l'image reste noire : le décodage
+        # matériel produit des trames que Qt ne sait pas toujours relire.
+        from .__main__ import software_decoding_enabled
+
+        self._software = QCheckBox("Décodage logiciel (si la vidéo reste noire)")
+        self._software.setChecked(software_decoding_enabled())
+        self._software.toggled.connect(self._on_software_decoding)
+        layout.addWidget(self._software)
+        layout.addWidget(hint("À essayer si vous entendez le son sans voir l'image. "
+                              "Prend effet au prochain démarrage."))
         layout.addStretch()
         return page
 

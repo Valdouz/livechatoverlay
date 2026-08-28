@@ -14,6 +14,18 @@ import sys
 if sys.platform not in ("win32", "darwin") and not os.environ.get("LIVECHAT_KEEP_PLATFORM"):
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
+from pathlib import Path as _Path  # noqa: E402
+
+#: Repli quand la vidéo reste noire alors que le son passe. Le décodage matériel
+#: produit des trames qui vivent sur le GPU et que Qt n'arrive pas toujours à
+#: relire ; en logiciel elles arrivent en mémoire ordinaire, toujours lisibles.
+#: Marqueur volontairement lisible sans Qt : la variable doit être posée avant
+#: que le greffon multimédia ne se charge, donc avant tout import de PySide6.
+SOFTWARE_DECODING_MARKER = _Path.home() / ".livechat" / "software-decoding"
+
+if SOFTWARE_DECODING_MARKER.exists() or os.environ.get("LIVECHAT_SOFTWARE_DECODING"):
+    os.environ["QT_FFMPEG_DECODING_HW_DEVICE_TYPES"] = ""
+
 import logging  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -100,6 +112,22 @@ def preset_server() -> str:
 
 #: Même normalisation que celle du panneau : une seule règle, un seul endroit.
 normalise = normalise_server_url
+
+
+def software_decoding_enabled() -> bool:
+    return SOFTWARE_DECODING_MARKER.exists()
+
+
+def set_software_decoding(enabled: bool) -> None:
+    """Pose ou retire le marqueur. Le changement prend effet au redémarrage."""
+    try:
+        if enabled:
+            SOFTWARE_DECODING_MARKER.parent.mkdir(parents=True, exist_ok=True)
+            SOFTWARE_DECODING_MARKER.write_text("1", encoding="utf-8")
+        else:
+            SOFTWARE_DECODING_MARKER.unlink(missing_ok=True)
+    except OSError as exc:
+        log.warning("Marqueur de décodage logiciel : %s", exc)
 
 
 def make_icon() -> QIcon:
