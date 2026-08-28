@@ -22,7 +22,7 @@ from PySide6.QtGui import (QAction, QColor, QGuiApplication, QIcon, QPainter,  #
                            QPen, QPixmap)
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
 
-from . import theme  # noqa: E402
+from . import fonts, theme  # noqa: E402
 from .api import Api  # noqa: E402
 from .overlay import Overlay  # noqa: E402
 from .panel import Panel  # noqa: E402
@@ -102,7 +102,17 @@ def normalise(url: str) -> str:
 
 
 def make_icon() -> QIcon:
-    """Icône dessinée à la volée : un fichier de moins à embarquer."""
+    """L'icône de l'application : le fichier embarqué, dessin de secours sinon.
+
+    Le fichier porte le même anneau vert que le panneau et que le cercle d'avatar
+    de l'overlay — c'est la seule marque visuelle du projet.
+    """
+    path = fonts.icon_path()
+    if path is not None:
+        icon = QIcon(str(path))
+        if not icon.isNull():
+            return icon
+
     pixmap = QPixmap(64, 64)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
@@ -333,6 +343,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("LiveChat")
     app.setOrganizationName("LiveChat")
+    app.setWindowIcon(make_icon())
     app.setQuitOnLastWindowClosed(False)  # le panneau se ferme, l'overlay reste
 
     if not QSystemTrayIcon.isSystemTrayAvailable():

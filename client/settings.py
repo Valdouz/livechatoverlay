@@ -28,6 +28,13 @@ AUTHOR_POSITIONS = {
     "hidden": "Masqué",
 }
 
+#: Le côté où se range la ligne auteur. À droite, l'ordre s'inverse — pseudo puis
+#: avatar — pour que l'avatar reste du côté du bord, comme à gauche.
+AUTHOR_SIDES = {
+    "left": "À gauche",
+    "right": "À droite",
+}
+
 DEFAULTS: dict[str, Any] = {
     "server_url": "",
     "token": "",
@@ -44,6 +51,7 @@ DEFAULTS: dict[str, Any] = {
     "name_size": 30,
     # Auteur
     "author_position": "above",
+    "author_side": "left",
     # Son
     "volume": 80,
     "muted": False,

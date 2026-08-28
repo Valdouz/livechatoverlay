@@ -146,6 +146,10 @@ class Overlay(QWidget):
         author = payload.get("author", {})
 
         self._reset_media()
+        # Un média qui en remplace un autre repart de zéro. Sans ça l'avancement
+        # valait encore 1 et l'animation se croyait terminée : seul le tout
+        # premier média du groupe s'animait.
+        self._progress = 0.0
         self._media_id = media.get("id")
         self._kind = media.get("kind", "image")
         self._animation = media.get("animation", "fade")
@@ -277,6 +281,11 @@ class Overlay(QWidget):
         image = frame.toImage()
         if image.isNull():
             return
+        # Une image 4K redimensionnée à chaque trame par le peintre coûte très
+        # cher. On la réduit une fois ici, à la taille réellement affichée.
+        target = self._media_size()
+        if not target.isEmpty() and image.width() > target.width() * 1.5:
+            image = image.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         # Qt 6 applique lui-même la rotation portrait déclarée dans le conteneur :
         # la v1 devait lire les boîtes moov/trak/tkhd à la main pour y arriver.
         first = self._frame_image is None
@@ -334,9 +343,16 @@ class Overlay(QWidget):
         self.update(self._paint_region())
 
     def _paint_region(self) -> QRect:
-        """Zone à repeindre : les animations déplacent le bloc hors de ses bornes."""
+        """Zone à repeindre.
+
+        Pendant une animation le bloc sort de ses bornes, il faut donc peindre
+        large. Au repos on s'en tient au bloc : une vidéo repeint à chaque image,
+        et élargir la zone de 70 % à 60 images par seconde coûte cher pour rien.
+        """
         if self._block.isEmpty():
             return self.rect()
+        if not self._anim_timer.isActive():
+            return self._block.adjusted(-2, -2, 2, 2)
         margin = max(80, int(max(self._block.width(), self._block.height()) * 0.7))
         return self._block.adjusted(-margin, -margin, margin, margin)
 
@@ -480,7 +496,8 @@ class Overlay(QWidget):
 
         top = self._block.top()
         if position == "above" and (self._author or self._avatar):
-            self._paint_author(painter, QPoint(self._block.left(), top), name_font)
+            self._paint_author(painter, QPoint(self._block.left(), top), name_font,
+                               width=self._block.width())
             top += self._author_row_height(name_font) + theme.AUTHOR_GAP
 
         # Le média garde sa taille : c'est le bloc qui s'élargit, pas lui.
@@ -495,6 +512,7 @@ class Overlay(QWidget):
                 painter,
                 QPoint(media_rect.left() + 14, media_rect.top() + 14),
                 name_font,
+                width=media_rect.width() - 28,
                 shadow=True,
             )
 
@@ -605,15 +623,38 @@ class Overlay(QWidget):
         painter.restore()
 
     def _paint_author(self, painter: QPainter, origin: QPoint, font: QFont,
-                      shadow: bool = False) -> None:
+                      width: int = 0, shadow: bool = False) -> None:
+        """Dessine avatar et pseudo, rangés à gauche ou à droite.
+
+        À droite, l'ordre s'inverse : pseudo puis avatar. L'avatar reste ainsi
+        contre le bord, comme à gauche, et la ligne se lit de la même façon en
+        miroir plutôt que de paraître décalée.
+        """
         metrics = QFontMetrics(font)
         row_h = self._author_row_height(font)
-        x = origin.x()
+        avatar = self._avatar_size(font) if self._avatar is not None else 0
+        right_side = self._settings["author_side"] == "right"
 
-        if self._avatar is not None:
-            size = self._avatar_size(font)
-            top = origin.y() + (row_h - size) // 2
-            circle = QRectF(x, top, size, size)
+        span = width or self._block.width()
+        available = span - avatar - (theme.AVATAR_TEXT_GAP if avatar else 0)
+        name = metrics.elidedText(
+            self._name_text(), Qt.ElideRight,
+            max(available - theme.NAME_OUTLINE_WIDTH, 1),
+        ) if self._author else ""
+        name_width = metrics.horizontalAdvance(name) if name else 0
+
+        used = avatar + (theme.AVATAR_TEXT_GAP if avatar and name else 0) + name_width
+        start = origin.x() + (span - used if right_side else 0)
+
+        # À droite le pseudo précède l'avatar ; à gauche c'est l'inverse.
+        avatar_x = start + name_width + theme.AVATAR_TEXT_GAP if right_side else start
+        name_x = start if right_side else start + avatar + (
+            theme.AVATAR_TEXT_GAP if avatar else 0
+        )
+
+        if avatar:
+            top = origin.y() + (row_h - avatar) // 2
+            circle = QRectF(avatar_x, top, avatar, avatar)
 
             painter.save()
             # Halo léger : sur un fond clair l'anneau vert perdrait son contraste.
@@ -625,7 +666,7 @@ class Overlay(QWidget):
             clip.addEllipse(circle)
             painter.setClipPath(clip)
             scaled = self._avatar.scaled(
-                size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+                avatar, avatar, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
             )
             painter.drawPixmap(circle.toRect(), scaled)
             painter.setClipping(False)
@@ -633,14 +674,11 @@ class Overlay(QWidget):
             painter.setPen(QPen(theme.RING_COLOR, theme.RING_WIDTH))
             painter.drawEllipse(circle)
             painter.restore()
-            x += size + theme.AVATAR_TEXT_GAP
 
-        if self._author:
-            available = self._block.right() - x - theme.NAME_OUTLINE_WIDTH
-            name = metrics.elidedText(self._name_text(), Qt.ElideRight, max(available, 1))
+        if name:
             baseline = origin.y() + (row_h + metrics.capHeight()) // 2
             self._paint_outlined(
-                painter, name, QPoint(x, baseline), font,
+                painter, name, QPoint(name_x, baseline), font,
                 theme.NAME_COLOR, theme.NAME_OUTLINE_COLOR, theme.NAME_OUTLINE_WIDTH,
             )
 

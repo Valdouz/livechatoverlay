@@ -38,6 +38,13 @@ def main() -> int:
         print("PyInstaller manquant. Installation…")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
 
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        # Sans Pillow, PyInstaller ne sait pas convertir le PNG en .icns sur macOS.
+        print("Pillow manquant. Installation…")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pillow"])
+
     if not (ASSETS / "Inter-Variable.ttf").exists():
         print("ERREUR : la police embarquée est absente de client/assets/.")
         print("Sans elle, chaque participant verrait une police différente.")
@@ -51,6 +58,14 @@ def main() -> int:
         "--add-data", f"{ASSETS}{separator}assets",
         "--collect-submodules", "PySide6.QtMultimedia",
     ]
+
+    # Windows veut un .ico multi-tailles ; ailleurs PyInstaller convertit le PNG
+    # au format du système, à condition que Pillow soit installé.
+    icon = ASSETS / ("icon.ico" if sys.platform == "win32" else "icon.png")
+    if icon.exists():
+        command += ["--icon", str(icon)]
+    else:
+        print("Icône absente de client/assets/, l'exécutable gardera celle par défaut.")
     for module in EXCLUDED:
         command += ["--exclude-module", module]
     # Le point d'entrée est livechat.py, pas client/__main__.py : PyInstaller

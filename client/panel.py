@@ -13,8 +13,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontDatabase, QPainter, QPen, QPixmap
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                                QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QProgressBar, QPushButton, QScrollArea, QSizePolicy,
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                                QWidget)
 
 from . import fonts, platform, theme
-from .settings import AUTHOR_POSITIONS, CORNERS
+from .settings import AUTHOR_POSITIONS, AUTHOR_SIDES, CORNERS
 
 log = logging.getLogger(__name__)
 
@@ -174,67 +174,51 @@ class Field(QWidget):
         layout.addWidget(widget)
 
 
-class DropZone(QWidget):
-    file_chosen = Signal(Path)
+FILE_FILTER = (
+    "Médias (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm *.mov *.mkv "
+    "*.mp3 *.wav *.m4a *.flac *.ogg *.opus *.aac);;"
+    "Images (*.png *.jpg *.jpeg *.gif *.webp);;"
+    "Vidéos (*.mp4 *.webm *.mov *.mkv);;"
+    "Audio (*.mp3 *.wav *.m4a *.flac *.ogg *.opus *.aac);;"
+    "Tous les fichiers (*)"
+)
 
-    def __init__(self):
-        super().__init__()
-        self.setObjectName("drop_zone")
-        self.setAcceptDrops(True)
-        self.setProperty("hover", "false")
-        self.setMinimumHeight(120)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(5)
-        layout.setAlignment(Qt.AlignCenter)
+class DragOverlay(QWidget):
+    """Voile affiché pendant qu'un fichier survole la fenêtre.
 
-        icon = QLabel("＋")
-        icon.setObjectName("drop_icon")
-        icon.setAlignment(Qt.AlignCenter)
-        title = QLabel("Glissez un fichier ici")
-        title.setObjectName("drop_title")
-        title.setAlignment(Qt.AlignCenter)
-        browse = QPushButton("Parcourir…")
-        browse.setObjectName("ghost_button")
-        browse.clicked.connect(self._browse)
+    Il couvre tout le panneau : on vise la fenêtre entière plutôt qu'un petit
+    rectangle, comme sur un site web. Transparent aux évènements de souris, sinon
+    il intercepterait le dépôt qu'il annonce.
+    """
 
-        layout.addWidget(icon)
-        layout.addWidget(title)
-        layout.addWidget(browse, alignment=Qt.AlignCenter)
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hide()
 
-    def _hover(self, hovering: bool) -> None:
-        self.setProperty("hover", "true" if hovering else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
+    def cover(self) -> None:
+        self.setGeometry(self.parentWidget().rect())
+        self.raise_()
+        self.show()
 
-    def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-            self._hover(True)
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.fillRect(self.rect(), QColor(10, 10, 16, 225))
 
-    def dragLeaveEvent(self, event) -> None:
-        self._hover(False)
+        frame = QRectF(self.rect()).adjusted(14, 14, -14, -14)
+        pen = QPen(theme.RING_COLOR, 3, Qt.DashLine)
+        pen.setDashPattern([5, 4])
+        painter.setPen(pen)
+        painter.setBrush(QColor(61, 220, 132, 18))
+        painter.drawRoundedRect(frame, 14, 14)
 
-    def dropEvent(self, event) -> None:
-        self._hover(False)
-        for url in event.mimeData().urls():
-            if url.isLocalFile():
-                self.file_chosen.emit(Path(url.toLocalFile()))
-                event.acceptProposedAction()
-                return
-
-    def _browse(self) -> None:
-        chosen, _ = QFileDialog.getOpenFileName(
-            self, "Envoyer un média", "",
-            "Médias (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm *.mov *.mkv "
-            "*.mp3 *.wav *.m4a *.flac *.ogg *.opus *.aac);;"
-            "Images (*.png *.jpg *.jpeg *.gif *.webp);;"
-            "Vidéos (*.mp4 *.webm *.mov *.mkv);;"
-            "Audio (*.mp3 *.wav *.m4a *.flac *.ogg *.opus *.aac);;"
-            "Tous les fichiers (*)",
-        )
-        if chosen:
-            self.file_chosen.emit(Path(chosen))
+        painter.setPen(QColor("#f0f0f6"))
+        font = fonts.display_font(17, QFont.Bold)
+        painter.setFont(font)
+        painter.drawText(frame, Qt.AlignCenter, "Déposez le fichier ici")
+        painter.end()
 
 
 class Panel(QWidget):
@@ -252,11 +236,16 @@ class Panel(QWidget):
         self._drag_from: QPoint | None = None
         self._online = False
         self._expanded = False
+        self._pending: Path | None = None
+        self._uploading = False
+        self._may_upload = True
 
         self.setObjectName("panel")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setStyleSheet(theme.PANEL_QSS)
         self.setFixedWidth(COMPACT_WIDTH)
+        # Toute la fenêtre accepte le dépôt : viser un petit rectangle est pénible.
+        self.setAcceptDrops(True)
         self.setWindowTitle("LiveChat")
 
         root = QVBoxLayout(self)
@@ -276,6 +265,7 @@ class Panel(QWidget):
         self._message.hide()
         root.addWidget(self._message)
 
+        self._drag_overlay = DragOverlay(self)
         self.set_identity(None)
         if self._settings.get("panel_expanded"):
             self.set_expanded(True)
@@ -436,7 +426,8 @@ class Panel(QWidget):
         layout.setSpacing(10)
 
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_send_tab(), "Envoyer")
+        self._send_tab = self._build_send_tab()
+        self._tabs.addTab(self._send_tab, "Envoyer")
         self._tabs.addTab(self._build_look_tab(), "Apparence")
         self._admin_tab = self._build_admin_tab()
         layout.addWidget(self._tabs)
@@ -455,12 +446,64 @@ class Panel(QWidget):
     def _build_send_tab(self) -> QWidget:
         page, layout = _tab()
 
-        self._drop = DropZone()
-        self._drop.file_chosen.connect(self._on_file_chosen)
-        layout.addWidget(self._drop)
+        # Deux temps : on choisit le fichier, puis on le décrit et on l'envoie.
+        # Envoyer dès le dépôt faisait perdre la légende — on la saisit rarement
+        # avant d'avoir le fichier sous les yeux.
+        self._send_stack = QStackedWidget()
+        self._send_stack.addWidget(self._build_pick_page())
+        self._send_stack.addWidget(self._build_confirm_page())
+        layout.addWidget(self._send_stack)
+
+        self._limit_label = hint("")
+        layout.addWidget(self._limit_label)
+        layout.addStretch()
+        return page
+
+    def _build_pick_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        layout.addStretch()
+
+        icon = QLabel("＋")
+        icon.setObjectName("drop_icon")
+        icon.setAlignment(Qt.AlignCenter)
+        title = QLabel("Glissez un fichier\nn'importe où dans cette fenêtre")
+        title.setObjectName("drop_title")
+        title.setAlignment(Qt.AlignCenter)
+        browse = QPushButton("Parcourir…")
+        browse.clicked.connect(self._browse)
+
+        layout.addWidget(icon)
+        layout.addWidget(title)
+        layout.addWidget(browse, alignment=Qt.AlignCenter)
+        layout.addStretch()
+        return page
+
+    def _build_confirm_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        file_row = QHBoxLayout()
+        file_row.setSpacing(8)
+        self._file_label = QLabel("")
+        self._file_label.setObjectName("drop_title")
+        self._file_label.setWordWrap(True)
+        change = QPushButton("Changer")
+        change.setObjectName("ghost_button")
+        change.clicked.connect(self._browse)
+        file_row.addWidget(self._file_label, 1)
+        file_row.addWidget(change)
+        layout.addLayout(file_row)
 
         self._caption_field = QLineEdit()
         self._caption_field.setPlaceholderText("Légende (facultative)")
+        # Sinon le champ intercepte le fichier déposé et y colle son chemin.
+        self._caption_field.setAcceptDrops(False)
+        self._caption_field.returnPressed.connect(self._send)
         layout.addWidget(self._caption_field)
 
         # Par défaut le média part sur tous les écrans ; on peut viser une personne.
@@ -481,6 +524,19 @@ class Panel(QWidget):
         )
         layout.addWidget(Field("Animation d'apparition", self._animation_box))
 
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self._abandon = QPushButton("Abandonner")
+        self._abandon.setObjectName("ghost_button")
+        self._abandon.clicked.connect(self._clear_selection)
+        self._send_button = QPushButton("Envoyer")
+        self._send_button.setObjectName("primary")
+        self._send_button.setMinimumHeight(36)
+        self._send_button.clicked.connect(self._send)
+        actions.addWidget(self._abandon)
+        actions.addWidget(self._send_button, 1)
+        layout.addLayout(actions)
+
         self._progress = QProgressBar()
         self._progress.setTextVisible(False)
         self._progress.hide()
@@ -490,7 +546,7 @@ class Panel(QWidget):
         self._progress_label = QLabel("")
         self._progress_label.setObjectName("value")
         self._progress_label.hide()
-        self._cancel_upload = QPushButton("Annuler")
+        self._cancel_upload = QPushButton("Annuler l'envoi")
         self._cancel_upload.setObjectName("ghost_button")
         self._cancel_upload.clicked.connect(self.upload_cancelled.emit)
         self._cancel_upload.hide()
@@ -498,15 +554,48 @@ class Panel(QWidget):
         progress_row.addStretch()
         progress_row.addWidget(self._cancel_upload)
         layout.addLayout(progress_row)
-
-        self._limit_label = hint("")
-        layout.addWidget(self._limit_label)
-        layout.addStretch()
         return page
 
-    def _on_file_chosen(self, path: Path) -> None:
+    # -- choix du fichier ------------------------------------------------------
+
+    def _browse(self) -> None:
+        chosen, _ = QFileDialog.getOpenFileName(self, "Envoyer un média", "", FILE_FILTER)
+        if chosen:
+            self.select_file(Path(chosen))
+
+    def select_file(self, path: Path) -> None:
+        """Retient le fichier sans l'envoyer : la description vient après."""
+        if self._uploading:
+            self.notify("Un envoi est déjà en cours.", error=True)
+            return
+        if not self._may_upload:
+            self.notify("Vous n'êtes pas autorisé à envoyer des médias.", error=True)
+            return
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            self.notify(f"Fichier illisible : {exc}", error=True)
+            return
+
+        self._pending = path
+        self._file_label.setText(f"{path.name}\n{human(size)}")
+        self._send_stack.setCurrentIndex(1)
+        self._tabs.setCurrentIndex(self._tabs.indexOf(self._send_tab))
+        self._caption_field.setFocus()
+        self._fit()
+
+    def _clear_selection(self) -> None:
+        self._pending = None
+        self._caption_field.clear()
+        self._send_stack.setCurrentIndex(0)
+        self._fit()
+
+    def _send(self) -> None:
+        if self._pending is None or self._uploading:
+            return
         self.upload_requested.emit(
-            path, self._caption_field.text().strip(),
+            self._pending,
+            self._caption_field.text().strip(),
             self._target_box.currentData() or "",
             self._animation_box.currentData() or "fade",
         )
@@ -533,13 +622,16 @@ class Panel(QWidget):
         return self._target_names.get(chosen, "") if chosen else ""
 
     def upload_started(self, total: int) -> None:
+        self._uploading = True
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
         self._progress.show()
         self._progress_label.setText(f"0 / {human(total)}")
         self._progress_label.show()
         self._cancel_upload.show()
-        self._drop.setEnabled(False)
+        self._send_button.setEnabled(False)
+        self._abandon.setEnabled(False)
+        self._fit()
 
     def upload_progress(self, sent: int, total: int) -> None:
         if total <= 0:
@@ -548,11 +640,15 @@ class Panel(QWidget):
         self._progress_label.setText(f"{human(sent)} / {human(total)}")
 
     def upload_ended(self, message: str, error: bool = False) -> None:
+        self._uploading = False
         self._progress.hide()
         self._progress_label.hide()
         self._cancel_upload.hide()
-        self._drop.setEnabled(True)
-        self._caption_field.clear()
+        self._send_button.setEnabled(True)
+        self._abandon.setEnabled(True)
+        # Un échec garde le fichier sous la main : on peut réessayer sans le rechoisir.
+        if not error:
+            self._clear_selection()
         self.notify(message, error=error)
 
     # -- apparence ------------------------------------------------------------
@@ -618,6 +714,16 @@ class Panel(QWidget):
             lambda: self._change("author_position", self._author_box.currentData())
         )
         layout.addWidget(Field("Affichage de l'auteur", self._author_box))
+
+        self._side_box = QComboBox()
+        for key, label in AUTHOR_SIDES.items():
+            self._side_box.addItem(label, key)
+        index = self._side_box.findData(self._settings["author_side"])
+        self._side_box.setCurrentIndex(index if index >= 0 else 0)
+        self._side_box.currentIndexChanged.connect(
+            lambda: self._change("author_side", self._side_box.currentData())
+        )
+        layout.addWidget(Field("Côté du pseudo", self._side_box))
 
         layout.addWidget(separator())
         layout.addWidget(section("Son et confort"))
@@ -776,12 +882,11 @@ class Panel(QWidget):
             self._tabs.removeTab(admin_index)
 
         limit = me.get("limits", {}).get("max_file_bytes", 0)
-        if user.get("may_upload", True):
+        self._may_upload = bool(user.get("may_upload", True))
+        if self._may_upload:
             self._limit_label.setText(f"Jusqu'à {human(limit)} par fichier.")
-            self._drop.setEnabled(True)
         else:
             self._limit_label.setText("Vous n'êtes pas autorisé à envoyer des médias.")
-            self._drop.setEnabled(False)
 
         self.set_connected(self._online)
         self._fit()
@@ -851,6 +956,35 @@ class Panel(QWidget):
     def _change(self, key: str, value) -> None:
         self._settings.set(key, value)
         self.settings_changed.emit()
+
+    # -- glisser-déposer sur toute la fenêtre ---------------------------------
+
+    def dragEnterEvent(self, event) -> None:
+        if self._me is None or not self._may_upload or self._uploading:
+            return
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self._drag_overlay.cover()
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event) -> None:
+        self._drag_overlay.hide()
+
+    def dropEvent(self, event) -> None:
+        self._drag_overlay.hide()
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                event.acceptProposedAction()
+                self.select_file(Path(url.toLocalFile()))
+                return
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._drag_overlay.isVisible():
+            self._drag_overlay.setGeometry(self.rect())
 
     # -- déplacement à la souris ---------------------------------------------
 

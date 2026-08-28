@@ -16,6 +16,7 @@ from PySide6.QtGui import QFont, QFontDatabase
 log = logging.getLogger(__name__)
 
 FONT_FILE = "Inter-Variable.ttf"
+ICON_FILE = "icon.png"
 
 _family: str | None = None
 
@@ -26,6 +27,12 @@ def assets_dir() -> Path:
     if bundled:
         return Path(bundled) / "assets"
     return Path(__file__).resolve().parent / "assets"
+
+
+def icon_path():
+    """Le fichier d'icône embarqué, ou None s'il manque."""
+    path = assets_dir() / ICON_FILE
+    return path if path.exists() else None
 
 
 def embedded_family() -> str:

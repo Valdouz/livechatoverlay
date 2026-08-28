@@ -204,8 +204,8 @@ def run() -> None:
         panel.set_identity({"user": {"display_name": "Sans", "is_admin": False,
                                      "is_owner": False, "may_upload": False},
                             "limits": {"max_file_bytes": 1024}, "defaults": {}})
-        check("sans droit d'envoi, la zone de depot est desactivee",
-              not panel._drop.isEnabled())
+        check("sans droit d'envoi, la selection est refusee",
+              not panel._may_upload)
 
         panel.set_identity({"user": {"display_name": "Chef", "is_admin": True,
                                      "is_owner": True, "may_upload": True},
@@ -294,13 +294,32 @@ def run() -> None:
         check("la selection survit au rafraichissement",
               panel._target_box.currentData() == "3", panel._target_box.currentText())
 
+        # -- l'envoi se fait en deux temps --------------------------------------
         emitted = []
         panel.upload_requested.connect(
             lambda p, c, t, a: emitted.append((p.name, c, t, a)))
+
+        sample = Path(tmp) / "image.png"
+        sample.write_bytes(png_bytes(32, 32))
+        panel.select_file(sample)
+        check("choisir un fichier n'envoie rien", emitted == [], str(emitted))
+        check("on passe a l'ecran de confirmation",
+              panel._send_stack.currentIndex() == 1, str(panel._send_stack.currentIndex()))
+        check("le nom du fichier est rappele", "image.png" in panel._file_label.text(),
+              panel._file_label.text())
+
         panel._caption_field.setText("coucou")
-        panel._on_file_chosen(Path("image.png"))
-        check("la cible accompagne l'envoi",
+        panel._send()
+        check("le bouton envoie avec la legende saisie apres coup",
               emitted == [("image.png", "coucou", "3", "fade")], str(emitted))
+
+        emitted.clear()
+        panel.select_file(sample)
+        panel._clear_selection()
+        check("abandonner revient au choix du fichier",
+              panel._send_stack.currentIndex() == 0 and panel._pending is None)
+        panel._send()
+        check("sans fichier retenu, rien ne part", emitted == [], str(emitted))
 
         panel._target_box.setCurrentIndex(0)
         check("retour a tout le monde", panel.target_name() == "")
@@ -329,9 +348,11 @@ def run() -> None:
         check("le choix d'animation est retenu", settings["animation"] == "bounce",
               settings["animation"])
         emitted.clear()
-        panel._on_file_chosen(Path("clip.mp4"))
+        panel.select_file(sample)
+        panel._send()
         check("l'animation accompagne l'envoi",
               emitted and emitted[0][3] == "bounce", str(emitted))
+        panel._clear_selection()
 
         settings.set("scale_percent", 30)
         overlay.show_media(payload("m8", "image", "http://x/y.png", "Alice"))
@@ -353,6 +374,19 @@ def run() -> None:
                          or abs(start_scale - 1.0) > 0.02 or start_opacity < 0.5)
                 check(f"animation « {name} » : etat initial distinct", moved,
                       f"{start_offset} {start_scale:.3f} {start_opacity:.3f}")
+
+        # Un média qui en remplace un autre doit réanimer : c'est le cas courant,
+        # puisqu'un nouvel envoi chasse le précédent sans file d'attente.
+        overlay._animation = "zoom"
+        overlay._progress = 1.0
+        replacing = payload("m10", "image", "http://x/y.png", "Alice")
+        replacing["media"]["animation"] = "zoom"
+        overlay.show_media(replacing)
+        check("un média qui en remplace un autre repart de zéro",
+              overlay._progress == 0.0, str(overlay._progress))
+        # Le remplacement a vidé le bloc : les décalages de glissement se
+        # calculent sur sa taille, il faut lui redonner une image.
+        overlay._on_image(png_bytes(400, 300))
 
         overlay._animation = "slide-up"
         overlay._progress = 0.0
