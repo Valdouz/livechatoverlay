@@ -26,10 +26,17 @@ jobs:
             name: windows
             artifact: LiveChat.exe
             path: dist/LiveChat.exe
+          # macos-latest est passé sur Apple Silicon : le binaire produit est
+          # arm64 seulement et refuse de démarrer sur un Mac Intel. Il faut donc
+          # compiler sur les deux architectures, PySide6 n'étant pas universal2.
           - os: macos-latest
             name: macos
-            artifact: LiveChat-macos.zip
-            path: dist/LiveChat-macos.zip
+            artifact: LiveChat-macos-apple-silicon.zip
+            path: dist/LiveChat-macos-apple-silicon.zip
+          - os: macos-15-intel
+            name: macos
+            artifact: LiveChat-macos-intel.zip
+            path: dist/LiveChat-macos-intel.zip
           - os: ubuntu-latest
             name: linux
             artifact: LiveChat-linux
@@ -90,11 +97,14 @@ jobs:
         if: matrix.name == 'macos'
         run: |
           cd dist
+          NAME="$(basename '${{ matrix.path }}')"
           if [ -d LiveChat.app ]; then
-            ditto -c -k --keepParent LiveChat.app LiveChat-macos.zip
+            ditto -c -k --keepParent LiveChat.app "$NAME"
           else
-            ditto -c -k LiveChat LiveChat-macos.zip
+            ditto -c -k LiveChat "$NAME"
           fi
+          echo "Architecture du binaire :"
+          lipo -archs LiveChat.app/Contents/MacOS/LiveChat 2>/dev/null             || file LiveChat.app/Contents/MacOS/LiveChat
 
       # Sans renommage, le binaire Linux s'appelle « LiveChat » tout court et
       # devient ambigu à côté de LiveChat.exe dans la liste de la release.
@@ -134,8 +144,12 @@ jobs:
             | Système | Fichier |
             |---|---|
             | Windows | `LiveChat.exe` |
-            | macOS | `LiveChat-macos.zip` |
+            | macOS — puces M1 à M4 | `LiveChat-macos-apple-silicon.zip` |
+            | macOS — Intel | `LiveChat-macos-intel.zip` |
             | Linux | `LiveChat-linux` |
+
+            Sur un Mac, le menu  > À propos indique la puce. Prendre le mauvais
+            fichier donne « l'application n'est pas prise en charge ».
 
             ### Premier lancement
 

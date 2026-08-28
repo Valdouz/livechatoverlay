@@ -27,11 +27,16 @@ from .api import Api  # noqa: E402
 from .overlay import Overlay  # noqa: E402
 from .panel import Panel  # noqa: E402
 from .settings import ClientSettings  # noqa: E402
+from .updates import Updater, reveal  # noqa: E402
+from . import __version__  # noqa: E402
 
 log = logging.getLogger("livechat.client")
 
 ADMIN_REFRESH_MS = 5000
 PEOPLE_REFRESH_MS = 8000
+
+#: Laisser l'interface s'installer avant d'aller interroger GitHub.
+UPDATE_CHECK_DELAY_MS = 4000
 
 
 def settings_path() -> Path:
@@ -144,6 +149,10 @@ class LiveChatClient:
         self._overlay = Overlay(self._settings)
         self._panel = Panel(self._settings)
 
+        self._updater = Updater(__version__)
+        self._downloaded = None
+        self._panel.set_version(__version__)
+
         self._wire()
         self._build_tray()
 
@@ -165,6 +174,8 @@ class LiveChatClient:
         # session enregistrée ne produisait rien de visible.
         if not start_in_tray:
             self._panel.open_near_cursor()
+
+        QTimer.singleShot(UPDATE_CHECK_DELAY_MS, self._updater.check)
 
     # -- câblage --------------------------------------------------------------
 
@@ -195,6 +206,16 @@ class LiveChatClient:
         panel.upload_requested.connect(self._on_upload)
         panel.upload_cancelled.connect(api.cancel_upload)
         panel.admin_action.connect(self._on_admin_action)
+        panel.update_requested.connect(self._updater.download)
+
+        self._updater.available.connect(panel.show_update)
+        self._updater.up_to_date.connect(panel.hide_update)
+        self._updater.check_failed.connect(
+            lambda reason: log.info("Vérification des mises à jour : %s", reason))
+        self._updater.download_progress.connect(panel.update_progress)
+        self._updater.ready.connect(self._on_update_ready)
+        self._updater.failed.connect(
+            lambda reason: panel.update_finished(reason, error=True))
 
     def _build_tray(self) -> None:
         self._tray = QSystemTrayIcon(make_icon())
@@ -320,6 +341,27 @@ class LiveChatClient:
         elif name == "patched":
             self._panel.notify("Réglage appliqué.")
             self._api.admin_get("settings", "settings")
+
+    # -- mise à jour -----------------------------------------------------------
+
+    def _on_update_ready(self, path) -> None:
+        """Le fichier est là. On l'installe si on peut, sinon on le montre.
+
+        Remplacer un exécutable en cours d'exécution n'est possible que sur
+        Windows et via un script tiers ; ailleurs on préfère une manipulation
+        manuelle assumée à une installation qui échoue à moitié.
+        """
+        self._downloaded = path
+        if self._updater.install(path):
+            self._panel.update_finished("Redémarrage…")
+            log.info("Mise à jour installée, relance en cours.")
+            self._quit()
+            return
+
+        reveal(path)
+        self._panel.update_finished(
+            f"Téléchargé dans {path.parent.name}. Remplacez l'application par ce fichier."
+        )
 
     # -- divers ---------------------------------------------------------------
 

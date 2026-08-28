@@ -168,6 +168,13 @@ QScrollBar::handle:vertical:hover { background: #3c3c54; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 
+QWidget#update_banner {
+    background: #16261c;
+    border: 1px solid #2c5a3f;
+    border-radius: 10px;
+}
+QLabel#update_text { color: #b7e8cb; font: 13px 'Segoe UI', sans-serif; }
+
 QWidget#drop_zone {
     border: 2px dashed #38384f; border-radius: 12px; background: #191922;
 }

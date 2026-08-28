@@ -228,6 +228,7 @@ class Panel(QWidget):
     upload_requested = Signal(Path, str, str, str)
     upload_cancelled = Signal()
     admin_action = Signal(str, object)
+    update_requested = Signal()
 
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -258,6 +259,9 @@ class Panel(QWidget):
         self._stack.addWidget(self._build_workspace())
         self._stack._only_current_counts(0)
         root.addWidget(self._stack)
+
+        self._update_banner = self._build_update_banner()
+        root.addWidget(self._update_banner)
 
         self._message = QLabel("")
         self._message.setWordWrap(True)
@@ -358,6 +362,74 @@ class Panel(QWidget):
             self.show()
             self.raise_()
 
+    # -- mise à jour ----------------------------------------------------------
+
+    def _build_update_banner(self) -> QWidget:
+        """Discret tant qu'il n'y a rien à signaler : caché par défaut."""
+        banner = QWidget()
+        banner.setObjectName("update_banner")
+        layout = QVBoxLayout(banner)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(7)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self._update_label = QLabel("")
+        self._update_label.setObjectName("update_text")
+        self._update_label.setWordWrap(True)
+        self._update_button = QPushButton("Mettre à jour")
+        self._update_button.setObjectName("primary")
+        self._update_button.clicked.connect(self._on_update_clicked)
+        row.addWidget(self._update_label, 1)
+        row.addWidget(self._update_button)
+        layout.addLayout(row)
+
+        self._update_progress = QProgressBar()
+        self._update_progress.setTextVisible(False)
+        self._update_progress.hide()
+        layout.addWidget(self._update_progress)
+
+        banner.hide()
+        return banner
+
+    def _on_update_clicked(self) -> None:
+        self._update_button.setEnabled(False)
+        self._update_button.setText("Téléchargement…")
+        self._update_progress.setRange(0, 100)
+        self._update_progress.setValue(0)
+        self._update_progress.show()
+        self._fit()
+        self.update_requested.emit()
+
+    def show_update(self, version: str) -> None:
+        self._update_label.setText(f"Version {version} disponible.")
+        self._update_button.setEnabled(True)
+        self._update_button.setText("Mettre à jour")
+        self._update_progress.hide()
+        self._update_banner.show()
+        self._fit()
+
+    def update_progress(self, received: int, total: int) -> None:
+        if total <= 0:
+            self._update_progress.setRange(0, 0)   # total inconnu : barre animée
+            return
+        self._update_progress.setRange(0, 100)
+        self._update_progress.setValue(int(received * 100 / total))
+        self._update_label.setText(f"Téléchargement… {human(received)} / {human(total)}")
+
+    def update_finished(self, message: str, error: bool = False) -> None:
+        self._update_progress.hide()
+        self._update_button.setEnabled(True)
+        self._update_button.setText("Réessayer" if error else "Mettre à jour")
+        self._update_label.setText(message)
+        if error:
+            self._update_banner.show()
+        self._fit()
+
+    def hide_update(self) -> None:
+        self._update_banner.hide()
+        self._fit()
+
     # -- écran de connexion ---------------------------------------------------
 
     def _build_welcome(self) -> QWidget:
@@ -433,6 +505,9 @@ class Panel(QWidget):
         layout.addWidget(self._tabs)
 
         footer = QHBoxLayout()
+        self._version_label = QLabel("")
+        self._version_label.setObjectName("hint")
+        footer.addWidget(self._version_label)
         logout = QPushButton("Se déconnecter")
         logout.setObjectName("ghost_button")
         logout.clicked.connect(self.logout_requested.emit)
@@ -863,6 +938,9 @@ class Panel(QWidget):
         )
 
     # -- état -----------------------------------------------------------------
+
+    def set_version(self, version: str) -> None:
+        self._version_label.setText(f"v{version}")
 
     def set_identity(self, me: dict | None) -> None:
         self._me = me

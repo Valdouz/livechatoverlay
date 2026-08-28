@@ -462,6 +462,54 @@ def run() -> None:
                    and tray.pixelColor(x, y).red() < 140)
         check("l'icone de notification aussi", ring > 100, f"{ring} pixels verts")
 
+        # -- comparaison de versions -------------------------------------------
+        from client.updates import Updater, asset_name, parse_version
+
+        for older, newer in (("2.0.0", "2.1.0"), ("2.0.9", "2.1.0"),
+                             ("1.9.9", "2.0.0"), ("2.0.0", "10.0.0"),
+                             ("2.1.0-rc1", "2.1.0"), ("2.0.0-dev", "2.0.0")):
+            check(f"{older} est anterieur a {newer}",
+                  parse_version(older) < parse_version(newer),
+                  f"{parse_version(older)} vs {parse_version(newer)}")
+
+        for a, b in (("2.1.0", "v2.1.0"), ("2.1.0", "2.1.0")):
+            check(f"{a} et {b} sont la meme version",
+                  parse_version(a) == parse_version(b))
+
+        check("une version illisible passe pour ancienne",
+              parse_version("n'importe quoi") < parse_version("0.0.1"),
+              str(parse_version("n'importe quoi")))
+        check("le fichier de release depend du systeme",
+              asset_name() in ("LiveChat.exe", "LiveChat-macos-apple-silicon.zip",
+                               "LiveChat-macos-intel.zip", "LiveChat-linux"),
+              asset_name())
+        check("depuis les sources, pas de remplacement automatique",
+              Updater.can_replace_itself() is False)
+
+        # -- bandeau de mise a jour --------------------------------------------
+        check("le bandeau est cache par defaut", not panel._update_banner.isVisible())
+        panel.show_update("9.9.9")
+        check("une version disponible affiche le bandeau",
+              "9.9.9" in panel._update_label.text(), panel._update_label.text())
+        panel.update_progress(50, 100)
+        check("la progression s'affiche", panel._update_progress.value() == 50,
+              str(panel._update_progress.value()))
+        panel.hide_update()
+        check("a jour, le bandeau disparait", not panel._update_banner.isVisible())
+
+        asked = []
+        panel.update_requested.connect(lambda: asked.append(1))
+        panel.show_update("9.9.9")
+        panel._on_update_clicked()
+        check("le bouton demande la mise a jour", asked == [1], str(asked))
+        check("le bouton se verrouille pendant le telechargement",
+              not panel._update_button.isEnabled())
+        panel.update_finished("boum", error=True)
+        check("un echec propose de reessayer",
+              panel._update_button.text() == "Réessayer" and panel._update_button.isEnabled(),
+              panel._update_button.text())
+        panel.hide_update()
+
         # -- divers -----------------------------------------------------------
         check("tailles lisibles", human(5 * 1024 ** 3) == "5.0 Gio", human(5 * 1024 ** 3))
         check("detection plein ecran sans erreur",
