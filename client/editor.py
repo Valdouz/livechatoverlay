@@ -69,6 +69,10 @@ class RangeBar(QWidget):
         self.update()
 
     @property
+    def duration(self) -> int:
+        return self._duration
+
+    @property
     def start(self) -> int:
         return self._start
 
@@ -271,9 +275,18 @@ class TrimDialog(QDialog):
     # -- résultat ---------------------------------------------------------------
 
     def selection(self) -> tuple[int, int]:
-        """(début, fin) en millisecondes. (0, 0) si tout est gardé."""
+        """(début, fin) en millisecondes. (0, 0) si tout est gardé.
+
+        La durée vient de la barre, pas du lecteur : celui-ci est vidé à la
+        fermeture et renverrait zéro. On concluait alors que la fin couvrait tout
+        le média, et raccourcir la fin — le cas le plus courant — était
+        silencieusement annulé.
+        """
         start, end = self._bar.start, self._bar.end
-        if start <= 0 and end >= self._player.duration():
+        duration = self._bar.duration
+        if duration <= 0:
+            return (0, 0)
+        if start <= 0 and end >= duration:
             return (0, 0)
         return (start, end)
 

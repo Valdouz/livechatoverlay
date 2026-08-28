@@ -69,6 +69,7 @@ class Overlay(QWidget):
         self._animation = "fade"
         self._trim_start = 0
         self._trim_end = 0
+        self._seeked = True
         self._progress = 0.0
         self._block = QRect()
 
@@ -298,8 +299,12 @@ class Overlay(QWidget):
 
     def _play_media(self, url: str) -> None:
         """Vidéo et audio passent par le même lecteur ; seul le rendu diffère."""
+        self._seeked = not self._trim_start
         self._player.setSource(QUrl(self._authorized(url)))
-        self._player.play()
+        # Sans extrait on démarre tout de suite ; sinon on attend d'être capable
+        # de se déplacer, pour ne pas montrer le début qu'on voulait couper.
+        if self._seeked:
+            self._player.play()
         if self._kind == "audio":
             # Pas d'image à attendre : la carte peut être placée tout de suite.
             self._relayout()
@@ -389,10 +394,12 @@ class Overlay(QWidget):
         self.update(self._paint_region())
 
     def _on_media_status(self, status) -> None:
-        # Un média chargé se place au début de l'extrait avant de se montrer.
-        if status == QMediaPlayer.MediaStatus.BufferedMedia and self._trim_start:
-            if self._player.position() < self._trim_start:
-                self._player.setPosition(self._trim_start)
+        # Se placer dès que le média l'autorise. « Chargé » suffit rarement : la
+        # capacité à se déplacer dépend du serveur, d'où la vérification.
+        if not self._seeked and self._player.isSeekable():
+            self._player.setPosition(self._trim_start)
+            self._seeked = True
+            self._player.play()
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self._acknowledge()
             self.clear()

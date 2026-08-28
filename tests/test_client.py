@@ -567,6 +567,30 @@ def run() -> None:
         check("le debut ne depasse pas la fin", barre.start <= barre.end - 100,
               f"{barre.start}-{barre.end}")
 
+        # La selection doit survivre a la fermeture de la boite de dialogue : le
+        # lecteur y est vide, et s'y fier faisait passer « garder le debut » pour
+        # « tout garder ».
+        from client.editor import TrimDialog
+        from PySide6.QtWidgets import QDialog
+
+        for nom, bornes, attendu in (
+            ("raccourcir la fin", (0, 10000), (0, 10000)),
+            ("couper le debut", (12000, 60000), (12000, 60000)),
+            ("les deux bouts", (5000, 20000), (5000, 20000)),
+            ("tout garder", (0, 60000), (0, 0)),
+        ):
+            dialogue = TrimDialog(Path("neant.mp4"))
+            dialogue._bar.set_duration(60000)
+            dialogue._bar._start, dialogue._bar._end = bornes
+            dialogue.done(QDialog.DialogCode.Accepted)
+            check(f"selection conservee : {nom}",
+                  dialogue.selection() == attendu,
+                  f"{bornes} -> {dialogue.selection()}, attendu {attendu}")
+
+        dialogue = TrimDialog(Path("neant.mp4"))
+        check("sans duree connue, aucun extrait", dialogue.selection() == (0, 0),
+              str(dialogue.selection()))
+
         # La selection complete equivaut a « tout garder ».
         sample_video = Path(tmp) / "clip.mp4"
         sample_video.write_bytes(b"x" * 2048)
