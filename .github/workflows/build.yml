@@ -123,6 +123,21 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      # Le système de mise à jour compare le tag de la release à __version__ :
+      # s'ils divergent, les clients se croient à jour et ne se mettent jamais à
+      # jour, ou proposent la mise à jour en boucle. Mieux vaut refuser ici.
+      - name: Le tag correspond-il à la version du paquet ?
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CODE=$(grep -oP '__version__\s*=\s*"\K[^"]+' client/__init__.py)
+          echo "tag=$TAG  client/__init__.py=$CODE"
+          if [ "$TAG" != "$CODE" ]; then
+            echo "::error::Le tag $GITHUB_REF_NAME ne correspond pas à __version__ = $CODE"
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
