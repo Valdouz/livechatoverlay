@@ -401,6 +401,32 @@ def run() -> None:
         check("la zone repeinte deborde du bloc",
               overlay._paint_region().contains(base), str(overlay._paint_region()))
 
+        # -- une trame en retard est abandonnee, pas mise en file --------------
+        class Piege:
+            """Si on la touche, c'est que la trame n'a pas ete sautee."""
+            def isValid(self):
+                raise AssertionError("trame traitee alors qu'une autre attendait")
+
+        overlay._frame_dirty = True
+        overlay._on_frame(Piege())          # ne doit rien faire
+        check("une trame recue trop tot est ignoree", True)
+
+        overlay._frame_dirty = False
+        try:
+            overlay._on_frame(Piege())
+            check("une trame est bien traitee quand l'affichage suit", False,
+                  "le piege n'a pas ete declenche")
+        except AssertionError:
+            check("une trame est bien traitee quand l'affichage suit", True)
+
+        # Peindre libere le verrou, sinon la video se figerait sur une image.
+        overlay.show_media(payload("m11", "image", "http://x/y.png", "Alice"))
+        overlay._on_image(png_bytes(320, 240))
+        overlay._frame_dirty = True
+        overlay._progress = 1.0
+        overlay.render(QImage(200, 200, QImage.Format_ARGB32))
+        check("peindre libere le verrou de trame", overlay._frame_dirty is False)
+
         # -- audio -------------------------------------------------------------
         audio = payload("m9", "audio", "http://x/son.mp3", "Alice", "écoute ça")
         audio["media"]["filename"] = "un_morceau_vraiment_long.mp3"

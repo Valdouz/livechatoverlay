@@ -52,6 +52,8 @@ class Overlay(QWidget):
         self._movie: QMovie | None = None
         self._movie_buffer: QBuffer | None = None
         self._frame_image: QImage | None = None
+        self._video_native = QSize()
+        self._frame_dirty = False
         self._author = ""
         self._avatar: QPixmap | None = None
         self._caption = ""
@@ -187,6 +189,8 @@ class Overlay(QWidget):
         self._movie_buffer = None
         self._pixmap = None
         self._frame_image = None
+        self._video_native = QSize()
+        self._frame_dirty = False
         self._media_id = None
         self._caption = ""
         self._author = ""
@@ -276,23 +280,35 @@ class Overlay(QWidget):
             self._acknowledge()
 
     def _on_frame(self, frame) -> None:
+        # Une trame reçue alors que la précédente n'est pas encore peinte est
+        # abandonnée. Sans ce garde-fou, chaque trame paie sa conversion en image
+        # même quand l'affichage a déjà du retard : le retard s'accumule et la
+        # lecture saccade. En sautant, on descend simplement en fréquence.
+        if self._frame_dirty:
+            return
         if not frame.isValid():
             return
         image = frame.toImage()
         if image.isNull():
             return
-        # Une image 4K redimensionnée à chaque trame par le peintre coûte très
-        # cher. On la réduit une fois ici, à la taille réellement affichée.
+
+        # Qt 6 applique lui-même la rotation portrait déclarée dans le conteneur :
+        # la v1 devait lire les boîtes moov/trak/tkhd à la main pour y arriver.
+        first = self._video_native.isEmpty()
+        if first:
+            self._video_native = image.size()
+
+        # Réduire une fois ici plutôt qu'à chaque peinture : une trame 4K affichée
+        # dans une vignette était redimensionnée soixante fois par seconde.
         target = self._media_size()
         if not target.isEmpty() and image.width() > target.width() * 1.5:
             image = image.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        # Qt 6 applique lui-même la rotation portrait déclarée dans le conteneur :
-        # la v1 devait lire les boîtes moov/trak/tkhd à la main pour y arriver.
-        first = self._frame_image is None
+
         self._frame_image = image
+        self._frame_dirty = True
         if first:
             self._relayout()
-        self.update(self._block)
+        self.update(self._paint_region())
 
     def _on_media_status(self, status) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
@@ -406,6 +422,10 @@ class Overlay(QWidget):
         return source.scaled(max_w, max_h, Qt.KeepAspectRatio)
 
     def _source_size(self) -> QSize:
+        # Toujours la taille native, jamais celle de la trame réduite : sinon la
+        # mise en page se recalculerait sur sa propre sortie et rétrécirait.
+        if not self._video_native.isEmpty():
+            return self._video_native
         if self._frame_image is not None:
             return self._frame_image.size()
         if self._pixmap is not None:
@@ -524,6 +544,8 @@ class Overlay(QWidget):
                 caption_font,
             )
         painter.end()
+        # La trame est à l'écran : le lecteur peut en proposer une nouvelle.
+        self._frame_dirty = False
 
     def _paint_media(self, painter: QPainter, rect: QRect) -> None:
         path = QPainterPath()
